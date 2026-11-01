@@ -3,381 +3,334 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#080F1C">
+  <meta name="theme-color" content="#061225">
 
   <title>MINICAT IA</title>
+  <meta name="description" content="MINICAT IA - Tu asistente inteligente">
+
+  <link rel="icon" type="image/jpeg"
+        href="/Screenshot_20261101_141227_Discord.jpg">
 
   <link rel="stylesheet" href="/style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: #f1f5f9;
+      background: #061225;
+      overflow-x: hidden;
+    }
+
+    .rain-background {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: .35;
+      background-image:
+        repeating-linear-gradient(
+          110deg,
+          transparent 0 35px,
+          rgba(80, 160, 255, .35) 36px,
+          transparent 38px
+        );
+      background-size: 90px 180px;
+      animation: rain 1s linear infinite;
+    }
+
+    .rain-glow {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(
+          circle at 50% 40%,
+          rgba(37, 99, 235, .22),
+          transparent 55%
+        );
+    }
+
+    @keyframes rain {
+      from { background-position: 0 0; }
+      to { background-position: -40px 180px; }
+    }
+
+    .navbar {
+      position: relative;
+      z-index: 2;
+      height: 80px;
+      padding: 0 7%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(130, 170, 230, .12);
+      background: rgba(5, 15, 32, .65);
+      backdrop-filter: blur(15px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+
+    .brand img {
+      width: 43px;
+      height: 43px;
+      object-fit: cover;
+      border-radius: 13px;
+    }
+
+    .login-button {
+      color: white;
+      text-decoration: none;
+      background: #2563eb;
+      padding: 13px 20px;
+      border-radius: 12px;
+      font-weight: 700;
+      transition: .2s;
+    }
+
+    .login-button:hover {
+      background: #397cf5;
+      transform: translateY(-2px);
+    }
+
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 75vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 65px 20px;
+    }
+
+    .hero-logo {
+      width: 125px;
+      height: 125px;
+      border-radius: 30px;
+      object-fit: cover;
+      box-shadow: 0 0 45px rgba(37, 99, 235, .35);
+      margin-bottom: 28px;
+    }
+
+    .tag {
+      color: #60a5fa;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+    }
+
+    h1 {
+      font-size: clamp(35px, 7vw, 65px);
+      margin: 17px 0;
+    }
+
+    h1 span {
+      color: #60a5fa;
+    }
+
+    .description {
+      max-width: 570px;
+      color: #a8bad3;
+      line-height: 1.8;
+      font-size: 16px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 13px;
+      margin-top: 30px;
+    }
+
+    .secondary-button {
+      color: #dbeafe;
+      text-decoration: none;
+      padding: 13px 20px;
+      border: 1px solid #29466d;
+      border-radius: 12px;
+    }
+
+    .status {
+      margin-top: 35px;
+      color: #91a3ba;
+      font-size: 13px;
+    }
+
+    .status span {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 7px;
+      border-radius: 50%;
+      background: #3b82f6;
+      box-shadow: 0 0 12px #3b82f6;
+    }
+
+    .features {
+      position: relative;
+      z-index: 1;
+      padding: 50px 7% 90px;
+      text-align: center;
+    }
+
+    .features h2 {
+      font-size: 30px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      max-width: 1000px;
+      margin: 35px auto 0;
+    }
+
+    .feature {
+      padding: 25px;
+      text-align: left;
+      border: 1px solid #203653;
+      border-radius: 18px;
+      background: rgba(13, 29, 51, .8);
+    }
+
+    .feature h3 {
+      color: #bfdbfe;
+    }
+
+    .feature p {
+      color: #91a3ba;
+      line-height: 1.6;
+    }
+
+    footer {
+      position: relative;
+      z-index: 1;
+      padding: 25px;
+      text-align: center;
+      color: #71839c;
+      border-top: 1px solid #1c304a;
+    }
+
+    @media (max-width: 650px) {
+      .navbar {
+        padding: 0 18px;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: 70vh;
+      }
+
+      .login-button {
+        padding: 11px 13px;
+        font-size: 12px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rain-background {
+        animation: none;
+      }
+    }
+  </style>
 </head>
 
 <body>
 
-<div class="app">
+  <div class="rain-background"></div>
+  <div class="rain-glow"></div>
 
-  <!-- =================================
-       MENÚ LATERAL
-  ================================== -->
-
-  <aside id="sidebar">
-
+  <nav class="navbar">
     <div class="brand">
-      <div class="brand-icon">🐱</div>
+      <img src="/Screenshot_20261101_141227_Discord.jpg"
+           alt="MINICAT IA">
       <span>MINICAT IA</span>
     </div>
 
-    <button id="new-chat-button" class="primary-button">
-      ＋ Nuevo chat
-    </button>
+    <a class="login-button" href="/auth/discord">
+      Iniciar sesión con Discord
+    </a>
+  </nav>
 
-    <input
-      id="search-chats"
-      type="search"
-      placeholder="Buscar chats..."
-      style="margin-top:14px;width:100%;"
-    >
+  <main>
+    <section class="hero">
 
-    <div class="sidebar-heading">CHATS ACTIVOS</div>
+      <img class="hero-logo"
+           src="/Screenshot_20261101_141227_Discord.jpg"
+           alt="Logo oficial de MINICAT IA">
 
-    <div id="active-chats"></div>
+      <div class="tag">TU ASISTENTE INTELIGENTE</div>
 
-    <div class="sidebar-bottom">
+      <h1>Conoce a <span>MINICAT IA</span></h1>
 
-      <div class="sidebar-heading">CHAT</div>
-
-      <button class="sidebar-link active" data-section="chat">
-        <span>◉</span>
-        <span>Chat</span>
-      </button>
-
-      <div class="sidebar-heading">CUENTA</div>
-
-      <button class="sidebar-link" data-section="account">
-        <span>♙</span>
-        <span>Mi cuenta</span>
-      </button>
-
-      <button class="sidebar-link" data-section="settings">
-        <span>⚙</span>
-        <span>Configuración</span>
-      </button>
-
-      <button class="sidebar-link" data-section="memory">
-        <span>✧</span>
-        <span>Memoria</span>
-      </button>
-
-    </div>
-
-  </aside>
-
-  <div id="sidebar-overlay"></div>
-
-  <!-- =================================
-       CONTENIDO PRINCIPAL
-  ================================== -->
-
-  <main class="main-content">
-
-    <!-- BARRA SUPERIOR -->
-
-    <header class="topbar">
-
-      <button id="menu-toggle" class="icon-button">
-        ☰
-      </button>
-
-      <div class="topbar-spacer"></div>
-
-      <div class="topbar-actions">
-
-        <button id="new-chat-button-top" class="icon-button"
-          aria-label="Nuevo chat">
-          ✎
-        </button>
-
-        <button id="global-menu-button" class="icon-button"
-          aria-label="Opciones generales">
-          ⋯
-        </button>
-
-      </div>
-
-      <div id="global-menu">
-        <button data-section="settings">⚙ Configuración</button>
-        <button data-section="memory">✧ Memoria</button>
-        <button data-section="account">♙ Mi cuenta</button>
-      </div>
-
-    </header>
-
-    <!-- =================================
-         CHAT
-    ================================== -->
-
-    <section id="chat" class="page-section">
-
-      <div class="chat-area">
-
-        <div class="chat-welcome">
-
-          <div class="chat-logo">🐱</div>
-
-          <h1>¿En qué puedo ayudarte?</h1>
-
-          <p>Estoy aquí para ayudarte con lo que necesites.</p>
-
-        </div>
-
-        <div class="composer">
-
-          <textarea
-            id="chat-input"
-            placeholder="Pregunta lo que quieras..."
-            rows="2"
-          ></textarea>
-
-          <div class="composer-actions">
-
-            <div>
-              <button class="icon-button" aria-label="Adjuntar">＋</button>
-              <button class="icon-button" aria-label="Imágenes">▧</button>
-              <button class="icon-button" aria-label="Voz">♩</button>
-            </div>
-
-            <button class="primary-button" id="send-message">
-              ↑
-            </button>
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </section>
-
-    <!-- =================================
-         CUENTA
-    ================================== -->
-
-    <section id="account" class="page-section" hidden>
-
-      <h1>Mi cuenta</h1>
-
-      <div class="account-card">
-
-        <div class="chat-logo">♙</div>
-
-        <h2>Mi perfil</h2>
-
-        <p class="settings-description">
-          Tu cuenta vinculada con Discord.
-        </p>
-
-        <div class="settings-row">
-          <span>Usuario</span>
-          <strong id="account-username">Cargando...</strong>
-        </div>
-
-        <div class="settings-row">
-          <span>Discord</span>
-          <strong id="account-discord">Conectado</strong>
-        </div>
-
-        <div class="settings-row">
-          <span>Plan</span>
-          <strong id="account-plan">Gratis</strong>
-        </div>
-
-        <div class="settings-row">
-          <span>Correo</span>
-          <strong id="account-email">No disponible</strong>
-        </div>
-
-      </div>
-
-      <div class="account-card">
-
-        <h3>Administrar cuenta</h3>
-
-        <button class="secondary-button" id="edit-profile">
-          Editar perfil
-        </button>
-
-        <button class="secondary-button" id="logout">
-          Cerrar sesión
-        </button>
-
-      </div>
-
-    </section>
-
-    <!-- =================================
-         CONFIGURACIÓN
-    ================================== -->
-
-    <section id="settings" class="page-section" hidden>
-
-      <h1>Configuración</h1>
-
-      <p class="settings-description">
-        Personaliza tu experiencia en MINICAT IA.
+      <p class="description">
+        Conversa, aprende, resuelve tus dudas y genera imágenes.
+        Tu espacio inteligente, conectado con tu cuenta de Discord.
       </p>
 
-      <div class="settings-card">
+      <div class="hero-actions">
+        <a class="login-button" href="/auth/discord">
+          Iniciar sesión con Discord →
+        </a>
 
-        <h3>Apariencia</h3>
-
-        <div class="settings-row">
-
-          <div>
-            <strong>Tema</strong>
-            <p class="settings-description">
-              Selecciona el aspecto de la página.
-            </p>
-          </div>
-
-          <select id="theme-selector">
-            <option value="dark">Oscuro</option>
-            <option value="light">Claro</option>
-            <option value="system">Automático</option>
-          </select>
-
-        </div>
-
+        <a class="secondary-button" href="#funciones">
+          Descubrir funciones
+        </a>
       </div>
 
-      <div class="settings-card">
-
-        <h3>Preferencias</h3>
-
-        <div class="settings-row">
-          <div>
-            <strong>Notificaciones</strong>
-            <p class="settings-description">
-              Recibir avisos de MINICAT IA.
-            </p>
-          </div>
-
-          <input type="checkbox" id="notifications-toggle" checked>
-        </div>
-
-        <div class="settings-row">
-          <div>
-            <strong>Memoria personal</strong>
-            <p class="settings-description">
-              Permitir que MINICAT recuerde tus preferencias.
-            </p>
-          </div>
-
-          <input type="checkbox" id="memory-toggle" checked>
-        </div>
-
-      </div>
-
-      <div class="settings-card">
-
-        <h3>Privacidad</h3>
-
-        <p class="settings-description">
-          Gestiona tus recuerdos y preferencias personales.
-        </p>
-
-        <button class="secondary-button" data-section="memory">
-          Administrar memoria
-        </button>
-
+      <div class="status">
+        <span></span>
+        Tu asistente inteligente
       </div>
 
     </section>
 
-    <!-- =================================
-         MEMORIA
-    ================================== -->
+    <section class="features" id="funciones">
+      <div class="tag">FUNCIONES</div>
+      <h2>Descubre MINICAT IA</h2>
 
-    <section id="memory" class="page-section" hidden>
+      <div class="feature-grid">
 
-      <h1>Memoria personal</h1>
+        <article class="feature">
+          <h3>Inteligencia artificial</h3>
+          <p>Pregunta, conversa y aprende.</p>
+        </article>
 
-      <p class="settings-description">
-        Administra la información que MINICAT IA puede recordar.
-      </p>
+        <article class="feature">
+          <h3>Generación de imágenes</h3>
+          <p>Convierte tus ideas en imágenes.</p>
+        </article>
 
-      <div class="memory-card">
-
-        <div class="settings-row">
-
-          <div>
-            <strong>Memoria activada</strong>
-
-            <p class="settings-description">
-              Tú controlas los recuerdos.
-            </p>
-          </div>
-
-          <input type="checkbox" id="memory-toggle">
-        </div>
+        <article class="feature">
+          <h3>Memoria personalizable</h3>
+          <p>Administra la información que MINICAT puede recordar.</p>
+        </article>
 
       </div>
-
-      <div class="memory-card">
-
-        <h3>Recuerdos guardados</h3>
-
-        <div id="memory-list"></div>
-
-      </div>
-
-      <div class="memory-card">
-
-        <h3>Añadir recuerdo</h3>
-
-        <input
-          type="text"
-          id="memory-input"
-          placeholder="Escribe algo para recordar..."
-          style="width:100%;"
-        >
-
-        <button
-          class="primary-button"
-          id="add-memory-button"
-          style="margin-top:12px;"
-        >
-          ＋ Añadir recuerdo
-        </button>
-
-        <button
-          class="secondary-button"
-          id="clear-memory-button"
-          style="margin-top:12px;"
-        >
-          Eliminar toda la memoria
-        </button>
-
-      </div>
-
-      <div class="memory-card">
-
-        <h3>Tu privacidad</h3>
-
-        <p class="settings-description">
-          La memoria personal es independiente del historial
-          de conversaciones. Puedes gestionar tus recuerdos
-          cuando quieras.
-        </p>
-
-      </div>
-
     </section>
-
   </main>
 
-</div>
-
-<script src="/script.js"></script>
+  <footer>
+    MINICAT IA © 2026 · Tu asistente inteligente
+  </footer>
 
 </body>
-    </html>
+</html>
