@@ -1,0 +1,355 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#061225">
+
+  <title>Chat | MINICAT IA</title>
+
+  <link rel="icon" type="image/jpeg"
+        href="/Screenshot_20261101_141227_Discord.jpg">
+
+  <link rel="stylesheet" href="/style.css">
+  <script src="/script.js" defer></script>
+</head>
+
+<body>
+
+  <main class="app">
+
+    <!-- MENÚ LATERAL -->
+
+    <aside id="sidebar" class="sidebar">
+
+      <div class="sidebar-header">
+        <a href="/chat" class="brand">
+          <img src="/Screenshot_20261101_141227_Discord.jpg"
+               alt="MINICAT IA">
+          <span>MINICAT IA</span>
+        </a>
+
+        <button id="sidebar-close"
+                class="icon-button"
+                aria-label="Cerrar menú">
+          ×
+        </button>
+      </div>
+
+      <button id="new-chat-button" class="new-chat-button">
+        <span>＋</span> Nuevo chat
+      </button>
+
+      <div class="sidebar-search">
+        <span>⌕</span>
+        <input id="search-chats"
+               type="search"
+               placeholder="Buscar chats">
+      </div>
+
+      <div class="sidebar-label">CHATS ACTIVOS</div>
+
+      <div id="active-chats" class="active-chats">
+        <p class="empty-chats">Tus chats aparecerán aquí.</p>
+      </div>
+
+      <div class="sidebar-bottom">
+
+        <button data-section="chat"
+                class="sidebar-nav active">
+          <span>💬</span> Chat
+        </button>
+
+        <button data-section="cuenta"
+                class="sidebar-nav">
+          <span>👤</span> Cuenta
+        </button>
+
+        <button data-section="configuracion"
+                class="sidebar-nav">
+          <span>⚙️</span> Configuración
+        </button>
+
+        <button data-section="memoria"
+                class="sidebar-nav">
+          <span>🧠</span> Memoria
+        </button>
+
+        <a href="https://discord.gg/chdyCpWPbf"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="sidebar-support">
+          <span>💬</span> Soporte
+        </a>
+
+      </div>
+
+    </aside>
+
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+    <!-- CONTENIDO -->
+
+    <section class="main-content">
+
+      <header class="topbar">
+
+        <button id="menu-toggle"
+                class="icon-button"
+                aria-label="Abrir menú">
+          ☰
+        </button>
+
+        <div class="topbar-actions">
+
+          <button id="new-chat-button-top"
+                  class="icon-button"
+                  title="Nuevo chat">
+            ✎
+          </button>
+
+          <div class="global-menu-container">
+
+            <button id="global-menu-button"
+                    class="icon-button"
+                    aria-label="Abrir opciones">
+              ⋮
+            </button>
+
+            <div id="global-menu" class="global-menu" hidden>
+
+              <button data-section="configuracion">
+                ⚙️ Configuración
+              </button>
+
+              <button data-section="memoria">
+                🧠 Memoria
+              </button>
+
+              <a href="https://discord.gg/chdyCpWPbf"
+                 target="_blank"
+                 rel="noopener noreferrer">
+                💬 Ayuda y soporte
+              </a>
+
+              <a href="/auth/logout">
+                ↪ Cerrar sesión
+              </a>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </header>
+
+      <div class="content-container">
+
+        <!-- CHAT -->
+
+        <section id="chat" class="page-section active">
+
+          <div class="chat-area">
+
+            <div id="chat-messages" class="chat-messages">
+
+              <div class="chat-welcome">
+
+                <img
+                  src="/Screenshot_20261101_141227_Discord.jpg"
+                  alt="MINICAT IA">
+
+                <h1>¿En qué puedo ayudarte?</h1>
+
+                <p>
+                  Soy MINICAT IA. Pregúntame lo que quieras,
+                  solicita explicaciones o genera imágenes.
+                </p>
+
+              </div>
+
+            </div>
+
+            <form id="chat-form" class="composer">
+
+              <textarea
+                id="message-input"
+                placeholder="Escribe un mensaje a MINICAT IA..."
+                rows="1"
+                maxlength="12000"
+                required></textarea>
+
+              <div class="composer-actions">
+
+                <span>MINICAT IA</span>
+
+                <button id="send-message" type="submit"
+                        aria-label="Enviar mensaje">
+                  ↑
+                </button>
+
+              </div>
+
+            </form>
+
+            <p class="chat-disclaimer">
+              MINICAT IA puede cometer errores.
+              Comprueba la información importante.
+            </p>
+
+          </div>
+
+        </section>
+
+        <!-- CUENTA -->
+
+        <section id="cuenta" class="page-section">
+
+          <div class="settings-container">
+
+            <h1>Mi cuenta</h1>
+            <p>Administra tu cuenta de MINICAT IA.</p>
+
+            <div class="account-card">
+
+              <img id="account-avatar"
+                   src="/Screenshot_20261101_141227_Discord.jpg"
+                   alt="Avatar de Discord">
+
+              <div>
+                <h2 id="account-name">Cargando usuario...</h2>
+                <p id="account-id">Conectado con Discord</p>
+              </div>
+
+            </div>
+
+            <div class="settings-card">
+              <h3>Cuenta de Discord</h3>
+              <p>Tu cuenta está vinculada a MINICAT IA.</p>
+              <span class="account-connected">Conectada</span>
+            </div>
+
+            <div class="settings-card">
+              <h3>Plan actual</h3>
+              <p id="account-plan">Plan gratuito</p>
+            </div>
+
+            <a href="/auth/logout" class="secondary-button">
+              Cerrar sesión
+            </a>
+
+          </div>
+
+        </section>
+
+        <!-- CONFIGURACIÓN -->
+
+        <section id="configuracion" class="page-section">
+
+          <div class="settings-container">
+
+            <h1>Configuración</h1>
+            <p>Personaliza tu experiencia.</p>
+
+            <div class="settings-card">
+
+              <h3>Apariencia</h3>
+
+              <select id="theme-selector">
+                <option value="dark">Azul oscuro</option>
+                <option value="light">Claro</option>
+                <option value="system">Automático</option>
+              </select>
+
+            </div>
+
+            <div class="settings-card">
+
+              <h3>Notificaciones</h3>
+
+              <label>
+                <input id="notifications-toggle"
+                       type="checkbox"
+                       checked>
+                Activar notificaciones
+              </label>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        <!-- MEMORIA -->
+
+        <section id="memoria" class="page-section">
+
+          <div class="settings-container">
+
+            <h1>Mi memoria</h1>
+
+            <p>
+              Administra la información que MINICAT IA
+              puede recordar sobre ti.
+            </p>
+
+            <div class="settings-card">
+
+              <label>
+                <input id="memory-toggle" type="checkbox">
+                Activar memoria personal
+              </label>
+
+              <p>
+                Puedes activar o desactivar la memoria
+                cuando quieras.
+              </p>
+
+            </div>
+
+            <div class="settings-card">
+
+              <h3>Agregar información</h3>
+
+              <textarea
+                id="memory-input"
+                placeholder="Escribe algo que quieras que recuerde..."
+                rows="3"></textarea>
+
+              <button id="add-memory-button"
+                      class="secondary-button">
+                Agregar a mi memoria
+              </button>
+
+            </div>
+
+            <div class="settings-card">
+
+              <h3>Información guardada</h3>
+
+              <div id="memory-list">
+                <p>No hay información guardada.</p>
+              </div>
+
+              <button id="clear-memory-button"
+                      class="secondary-button">
+                Borrar mi memoria
+              </button>
+
+            </div>
+
+          </div>
+
+        </section>
+
+      </div>
+
+    </section>
+
+  </main>
+
+</body>
+</html>
+              
