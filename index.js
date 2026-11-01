@@ -5,8 +5,8 @@ const express = require("express");
 const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
-const Groq = require("groq-sdk");
 const crypto = require("crypto");
+const Groq = require("groq-sdk");
 
 const {
   Client,
@@ -27,29 +27,34 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BASE_URL = process.env.BASE_URL || "";
+const PREFIX = ".";
+
+const PUBLIC_PATH = path.join(__dirname, "public");
+const LOGO_PATH = path.join(
+  PUBLIC_PATH,
+  "Screenshot_20261101_141227_Discord.jpg"
+);
 
 const DATA_PATH = path.resolve(
   process.env.DATA_PATH || "./data/database.json"
 );
 
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
-const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
-
-const PREFIX = ".";
-
-// =====================================
-// BASE DE DATOS LOCAL
-// =====================================
-
-const dataDirectory = path.dirname(DATA_PATH);
-
-if (!fs.existsSync(dataDirectory)) {
-  fs.mkdirSync(dataDirectory, { recursive: true });
+if (!process.env.SESSION_SECRET) {
+  console.error("Falta SESSION_SECRET.");
+  process.exit(1);
 }
+
+// =====================================
+// BASE DE DATOS
+// =====================================
+
+fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
 
 if (!fs.existsSync(DATA_PATH)) {
   fs.writeFileSync(DATA_PATH, JSON.stringify({
@@ -71,7 +76,7 @@ if (!fs.existsSync(DATA_PATH)) {
 }
 
 function readDatabase() {
-  const data = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
+  const database = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
 
   for (const key of [
     "users",
@@ -81,10 +86,10 @@ function readDatabase() {
     "statistics",
     "warnings"
   ]) {
-    if (!data[key]) data[key] = {};
+    if (!database[key]) database[key] = {};
   }
 
-  return data;
+  return database;
 }
 
 function saveDatabase(database) {
@@ -99,17 +104,12 @@ function saveDatabase(database) {
 }
 
 // =====================================
-// SERVIDOR WEB
+// EXPRESS Y SESIONES
 // =====================================
 
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
-
-if (!process.env.SESSION_SECRET) {
-  console.error("Falta SESSION_SECRET en Railway.");
-  process.exit(1);
-}
 
 app.use(session({
   name: "minicat.sid",
@@ -123,6 +123,20 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
+
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    if (req.path.startsWith("/api/")) {
+      return res.status(401).json({
+        error: "Inicia sesión con Discord."
+      });
+    }
+
+    return res.redirect("/");
+  }
+
+  next();
+}
 
 // =====================================
 // DISCORD OAUTH2
@@ -211,36 +225,42 @@ app.get("/auth/discord/callback", async (req, res) => {
       throw new Error("No se pudo obtener el usuario.");
     }
 
-    const database = readDatabase();
-
-    database.users[user.id] = {
-      id: user.id,
-      username: user.username,
-      globalName: user.global_name || user.username,
-      avatar: user.avatar,
-      lastLogin: new Date().toISOString()
-    };
-
-    saveDatabase(database);
-
-    req.session.user = {
+    const account = {
       id: user.id,
       username: user.username,
       globalName: user.global_name || user.username,
       avatar: user.avatar
     };
 
-    req.session.save(error => {
+    const database = readDatabase();
+
+    database.users[user.id] = {
+      ...account,
+      lastLogin: new Date().toISOString()
+    };
+
+    saveDatabase(database);
+
+    req.session.regenerate(error => {
       if (error) {
-        console.error("Error guardando sesión:", error);
+        console.error(error);
         return res.status(500).send("Error iniciando sesión.");
       }
 
-      res.redirect("/chat");
+      req.session.user = account;
+
+      req.session.save(saveError => {
+        if (saveError) {
+          console.error(saveError);
+          return res.status(500).send("Error guardando sesión.");
+        }
+
+        res.redirect("/chat");
+      });
     });
 
   } catch (error) {
-    console.error("Error OAuth2:", error);
+    console.error("Error OAuth2:", error.message);
     res.status(500).send(
       "No se pudo iniciar sesión con Discord."
     );
@@ -248,19 +268,19 @@ app.get("/auth/discord/callback", async (req, res) => {
 });
 
 // =====================================
-// AUTENTICACIÓN WEB
+// PÁGINAS
 // =====================================
 
-function requireLogin(req, res, next) {
-  if (!req.session.user) {
-    return res.redirect("/");
+app.get("/", (req, res) => {
+  if (req.session.user) {
+    return res.redirect("/chat");
   }
 
-  next();
-}
+  res.sendFile(path.join(PUBLIC_PATH, "index.html"));
+});
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+app.get("/chat", requireLogin, (req, res) => {
+  res.sendFile(path.join(PUBLIC_PATH, "chat.html"));
 });
 
 app.get("/api/me", requireLogin, (req, res) => {
@@ -271,23 +291,50 @@ app.get("/api/me", requireLogin, (req, res) => {
 });
 
 app.post("/auth/logout", (req, res) => {
-  req.session.destroy(() => {
+  req.session.destroy(error => {
+    if (error) {
+      return res.status(500).json({
+        error: "No se pudo cerrar sesión."
+      });
+    }
+
     res.clearCookie("minicat.sid");
-    res.redirect("/");
+    res.json({ success: true });
   });
 });
 
-app.get("/chat", requireLogin, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+app.get("/chat.html", (req, res) => {
+  res.redirect("/chat");
 });
+
+// =====================================
+// ARCHIVOS PÚBLICOS Y LOGO
+// =====================================
+
+app.get("/logo", (req, res) => {
+  if (!fs.existsSync(LOGO_PATH)) {
+    return res.status(404).send("No se encontró el logo.");
+  }
+
+  res.sendFile(LOGO_PATH);
+});
+
+app.use(express.static(PUBLIC_PATH, {
+  index: false
+}));
 
 // =====================================
 // INTELIGENCIA ARTIFICIAL
 // =====================================
 
-async function askMinicat(userId, conversationId, question, guildId = null) {
+async function askMinicat(
+  userId,
+  conversationId,
+  question,
+  guildId = null
+) {
   if (!groq) {
-    throw new Error("GROQ_API_KEY_NOT_CONFIGURED");
+    throw new Error("IA_NOT_CONFIGURED");
   }
 
   const database = readDatabase();
@@ -301,6 +348,10 @@ async function askMinicat(userId, conversationId, question, guildId = null) {
 
   const conversation = database.conversations[conversationId];
 
+  if (conversation.userId !== userId) {
+    throw new Error("CONVERSATION_ACCESS_DENIED");
+  }
+
   const previousMessages = [...conversation.messages];
 
   conversation.messages.push({
@@ -310,28 +361,23 @@ async function askMinicat(userId, conversationId, question, guildId = null) {
 
   conversation.messages = conversation.messages.slice(-12);
 
-  const serverLanguage = guildId
-    ? database.servers[guildId]?.language
-    : null;
-
-  const language = serverLanguage || "español colombiano";
-
-  const messages = [
-    {
-      role: "system",
-      content:
-        `Eres MINICAT IA, un asistente inteligente y profesional. ` +
-        `Responde en ${language}, de forma clara, natural y útil. ` +
-        "Ayuda con programación, tecnología, explicaciones, preguntas " +
-        "y tareas creativas. No reveles detalles internos de tus proveedores."
-    },
-    ...conversation.messages
-  ];
+  const language = guildId
+    ? database.servers[guildId]?.language || "español colombiano"
+    : "español colombiano";
 
   try {
     const completion = await groq.chat.completions.create({
       model: MODEL,
-      messages,
+      messages: [
+        {
+          role: "system",
+          content:
+            `Eres MINICAT IA. Responde en ${language}, ` +
+            "de forma clara, natural y útil. " +
+            "No reveles proveedores ni detalles internos."
+        },
+        ...conversation.messages
+      ],
       max_completion_tokens: 1200
     });
 
@@ -339,7 +385,7 @@ async function askMinicat(userId, conversationId, question, guildId = null) {
       completion.choices?.[0]?.message?.content?.trim();
 
     if (!answer) {
-      throw new Error("La IA devolvió una respuesta vacía.");
+      throw new Error("Respuesta vacía.");
     }
 
     conversation.messages.push({
@@ -350,7 +396,6 @@ async function askMinicat(userId, conversationId, question, guildId = null) {
     conversation.messages = conversation.messages.slice(-12);
 
     saveDatabase(database);
-
     return answer;
 
   } catch (error) {
@@ -361,10 +406,113 @@ async function askMinicat(userId, conversationId, question, guildId = null) {
 }
 
 // =====================================
+// API DEL CHAT WEB
+// =====================================
+
+app.post("/api/chat", requireLogin, async (req, res) => {
+  try {
+    const message = String(req.body.message || "").trim();
+
+    if (!message || message.length > 5000) {
+      return res.status(400).json({
+        error: "Escribe un mensaje de hasta 5000 caracteres."
+      });
+    }
+
+    const userId = req.session.user.id;
+
+    let conversationId = String(
+      req.body.conversationId || ""
+    );
+
+    if (!conversationId) {
+      conversationId = `web:${userId}:${crypto.randomUUID()}`;
+    }
+
+    if (!conversationId.startsWith(`web:${userId}:`)) {
+      return res.status(403).json({
+        error: "Conversación no autorizada."
+      });
+    }
+
+    const answer = await askMinicat(
+      userId,
+      conversationId,
+      message
+    );
+
+    const database = readDatabase();
+
+    res.json({
+      success: true,
+      conversationId,
+      message: answer,
+      messages: database.conversations[conversationId].messages
+    });
+
+  } catch (error) {
+    console.error("Error en API chat:", error.message);
+
+    res.status(500).json({
+      error: "No se pudo obtener una respuesta."
+    });
+  }
+});
+
+// =====================================
+// LISTA Y CARGA DE CHATS
+// =====================================
+
+app.get("/api/chats", requireLogin, (req, res) => {
+  const userId = req.session.user.id;
+  const database = readDatabase();
+
+  const chats = Object.entries(database.conversations)
+    .filter(([id, conversation]) =>
+      id.startsWith(`web:${userId}:`) &&
+      conversation.userId === userId
+    )
+    .map(([id, conversation]) => ({
+      id,
+      title: conversation.messages.find(
+        message => message.role === "user"
+      )?.content?.slice(0, 45) || "Nuevo chat"
+    }));
+
+  res.json({ chats });
+});
+
+app.get("/api/chat/:id", requireLogin, (req, res) => {
+  const userId = req.session.user.id;
+  const conversationId = req.params.id;
+
+  if (!conversationId.startsWith(`web:${userId}:`)) {
+    return res.status(403).json({
+      error: "Conversación no autorizada."
+    });
+  }
+
+  const database = readDatabase();
+  const conversation = database.conversations[conversationId];
+
+  if (!conversation || conversation.userId !== userId) {
+    return res.status(404).json({
+      error: "Conversación no encontrada."
+    });
+  }
+
+  res.json({
+    success: true,
+    conversationId,
+    messages: conversation.messages
+  });
+});
+
+// =====================================
 // GENERACIÓN DE IMÁGENES
 // =====================================
 
-async function generateImage(prompt) {
+async function generateImageBuffer(prompt) {
   const apiKey = process.env.IMAGE_API_KEY;
   const apiUrl = process.env.IMAGE_API_URL;
 
@@ -381,35 +529,48 @@ async function generateImage(prompt) {
     },
     body: JSON.stringify({
       inputs: prompt,
-      options: {
-        wait_for_model: true
-      }
+      options: { wait_for_model: true }
     })
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `IMAGE_API_ERROR_${response.status}: ${errorText.slice(0, 300)}`
-    );
+    throw new Error(`IMAGE_API_ERROR_${response.status}`);
   }
 
-  const contentType = response.headers.get("content-type") || "";
+  const type = response.headers.get("content-type") || "";
 
-  if (!contentType.startsWith("image/")) {
-    throw new Error("El proveedor no devolvió una imagen.");
+  if (!type.startsWith("image/")) {
+    throw new Error("Respuesta de imagen inválida.");
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-
-  if (!buffer.length) {
-    throw new Error("La imagen generada está vacía.");
-  }
-
-  return new AttachmentBuilder(buffer, {
-    name: "minicat-imagen.png"
-  });
+  return Buffer.from(await response.arrayBuffer());
 }
+
+app.post("/api/image", requireLogin, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || "").trim();
+
+    if (!prompt || prompt.length > 1000) {
+      return res.status(400).json({
+        error: "Describe la imagen (máximo 1000 caracteres)."
+      });
+    }
+
+    const buffer = await generateImageBuffer(prompt);
+
+    res.json({
+      success: true,
+      image: `data:image/png;base64,${buffer.toString("base64")}`
+    });
+
+  } catch (error) {
+    console.error("Error de imagen:", error.message);
+
+    res.status(500).json({
+      error: "No se pudo generar la imagen."
+    });
+  }
+});
 
 // =====================================
 // CLIENTE DISCORD
@@ -423,10 +584,6 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
-
-// =====================================
-// UTILIDADES
-// =====================================
 
 function getConversationId(guildId, channelId, userId) {
   return `discord:${guildId}:${channelId}:${userId}`;
@@ -446,145 +603,25 @@ function isAdministrator(member) {
   );
 }
 
-function getArgs(content) {
-  return content.trim().split(/\s+/).slice(1);
-}
-
-function getText(content) {
-  return content.trim().split(/\s+/).slice(1).join(" ");
-}
-
 async function replyLong(message, content) {
   const chunks = content.match(/[\s\S]{1,1900}/g) || [];
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (i === 0) {
-      await message.reply(chunks[i]);
+  for (let index = 0; index < chunks.length; index++) {
+    if (index === 0) {
+      await message.reply(chunks[index]);
     } else {
-      await message.channel.send(chunks[i]);
+      await message.channel.send(chunks[index]);
     }
   }
 }
 
-async function interactionLong(interaction, content) {
-  const chunks = content.match(/[\s\S]{1,1900}/g) || [];
-
-  await interaction.editReply(chunks[0] || "Sin respuesta.");
-
-  for (const chunk of chunks.slice(1)) {
-    await interaction.followUp(chunk);
-  }
-}
-
-function getGuildSettings(guildId) {
-  const database = readDatabase();
-
-  if (!database.servers[guildId]) {
-    database.servers[guildId] = {};
-    saveDatabase(database);
-  }
-
-  return database.servers[guildId];
-}
-
-function saveGuildSetting(guildId, key, value) {
-  const database = readDatabase();
-
-  if (!database.servers[guildId]) {
-    database.servers[guildId] = {};
-  }
-
-  database.servers[guildId][key] = value;
-
-  saveDatabase(database);
-}
-
-function getWarnings(guildId, userId) {
-  const database = readDatabase();
-
-  return database.warnings[guildId]?.[userId] || [];
-}
-
-function addWarning(guildId, userId, moderatorId, reason) {
-  const database = readDatabase();
-
-  if (!database.warnings[guildId]) {
-    database.warnings[guildId] = {};
-  }
-
-  if (!database.warnings[guildId][userId]) {
-    database.warnings[guildId][userId] = [];
-  }
-
-  database.warnings[guildId][userId].push({
-    moderatorId,
-    reason,
-    date: new Date().toISOString()
-  });
-
-  saveDatabase(database);
-}
-
-// =====================================
-// COMANDOS DE AYUDA
-// =====================================
-
-function helpMessage() {
-  return [
-    "🐱 **MINICAT IA — CENTRO DE COMANDOS**",
-    "",
-    "**🤖 Inteligencia artificial**",
-    "`.chat mensaje` · `.hola Minicat` · `@MINICAT IA mensaje`",
-    "`.resumir texto` · `.traducir texto`",
-    "`.codigo lenguaje` · `.explicar tema` · `.analizar`",
-    "",
-    "**🖼️ Imágenes**",
-    "`.imagine descripción`",
-    "",
-    "**🛡️ Moderación**",
-    "`.warn` · `.warnings` · `.clear` · `.kick` · `.ban`",
-    "`.unban` · `.timeout` · `.lock` · `.unlock`",
-    "",
-    "**⚙️ Administración**",
-    "`.config` · `.welcome` · `.goodbye`",
-    "`.stats` · `.language` · `.ping` · `.help`",
-    "",
-    "**🌐 Comunidad**",
-    "`.userinfo` · `.serverinfo` · `.avatar`",
-    "`.poll` · `.suggest`",
-    "",
-    "**🎮 Diversión**",
-    "`.8ball` · `.coinflip` · `.dice`",
-    "`.ship` · `.joke` · `.fact` · `.rps`",
-    "",
-    "**🧰 Herramientas**",
-    "`.calculator` · `.choose` · `.userinfo`",
-    "",
-    "También puedes usar los comandos slash `/`."
-  ].join("\n");
-}
-
-// =====================================
-// FUNCIONES DE IA
-// =====================================
-
 async function runAI(userId, guildId, channelId, question) {
-  const conversationId = getConversationId(
-    guildId,
-    channelId,
-    userId
-  );
-
   return askMinicat(
     userId,
-    conversationId,
+    getConversationId(guildId, channelId, userId),
     question,
     guildId
   );
-}
-
-async function runImage(prompt) {
-  return generateImage(prompt);
 }
 
 // =====================================
@@ -592,12 +629,11 @@ async function runImage(prompt) {
 // =====================================
 
 const slashCommands = [
-
   new SlashCommandBuilder()
     .setName("chat")
     .setDescription("Habla con MINICAT IA")
-    .addStringOption(o =>
-      o.setName("mensaje")
+    .addStringOption(option =>
+      option.setName("mensaje")
         .setDescription("Tu mensaje")
         .setRequired(true)
         .setMaxLength(1500)
@@ -606,52 +642,11 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName("imagine")
     .setDescription("Genera una imagen")
-    .addStringOption(o =>
-      o.setName("descripcion")
+    .addStringOption(option =>
+      option.setName("descripcion")
         .setDescription("Describe la imagen")
         .setRequired(true)
         .setMaxLength(1000)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("resumir")
-    .setDescription("Resume un texto")
-    .addStringOption(o =>
-      o.setName("texto").setDescription("Texto").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("traducir")
-    .setDescription("Traduce un texto")
-    .addStringOption(o =>
-      o.setName("texto").setDescription("Texto").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("idioma").setDescription("Idioma de destino").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("codigo")
-    .setDescription("Crea código")
-    .addStringOption(o =>
-      o.setName("lenguaje").setDescription("Lenguaje").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("descripcion").setDescription("Qué necesitas").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("explicar")
-    .setDescription("Explica un tema")
-    .addStringOption(o =>
-      o.setName("tema").setDescription("Tema").setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("analizar")
-    .setDescription("Analiza una imagen adjunta")
-    .addAttachmentOption(o =>
-      o.setName("imagen").setDescription("Imagen que quieres analizar").setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -663,76 +658,110 @@ const slashCommands = [
     .setDescription("Muestra los comandos"),
 
   new SlashCommandBuilder()
+    .setName("resumir")
+    .setDescription("Resume un texto")
+    .addStringOption(option =>
+      option.setName("texto").setDescription("Texto").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("traducir")
+    .setDescription("Traduce un texto")
+    .addStringOption(option =>
+      option.setName("texto").setDescription("Texto").setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("idioma").setDescription("Idioma").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("explicar")
+    .setDescription("Explica un tema")
+    .addStringOption(option =>
+      option.setName("tema").setDescription("Tema").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
     .setName("warn")
     .setDescription("Advierte a un usuario")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(true))
-    .addStringOption(o => o.setName("razon").setDescription("Razón").setRequired(true)),
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario").setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("razon").setDescription("Razón").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("warnings")
     .setDescription("Consulta advertencias")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(true)),
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("clear")
     .setDescription("Elimina mensajes recientes")
-    .addIntegerOption(o => o.setName("cantidad").setDescription("Cantidad de mensajes").setRequired(true).setMinValue(1).setMaxValue(100)),
+    .addIntegerOption(option =>
+      option.setName("cantidad")
+        .setDescription("Cantidad")
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(100)
+    ),
 
   new SlashCommandBuilder()
     .setName("kick")
     .setDescription("Expulsa a un usuario")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(true))
-    .addStringOption(o => o.setName("razon").setDescription("Razón").setRequired(false)),
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario").setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("razon").setDescription("Razón")
+    ),
 
   new SlashCommandBuilder()
     .setName("ban")
     .setDescription("Banea a un usuario")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(true))
-    .addStringOption(o => o.setName("razon").setDescription("Razón").setRequired(false)),
-
-  new SlashCommandBuilder()
-    .setName("unban")
-    .setDescription("Desbanea por ID")
-    .addStringOption(o => o.setName("id").setDescription("ID de Discord").setRequired(true)),
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario").setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("razon").setDescription("Razón")
+    ),
 
   new SlashCommandBuilder()
     .setName("timeout")
-    .setDescription("Aplica un tiempo de espera")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(true))
-    .addIntegerOption(o => o.setName("minutos").setDescription("Duración en minutos").setRequired(true).setMinValue(1).setMaxValue(40320))
-    .addStringOption(o => o.setName("razon").setDescription("Razón").setRequired(false)),
+    .setDescription("Aplica tiempo de espera")
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario").setRequired(true)
+    )
+    .addIntegerOption(option =>
+      option.setName("minutos")
+        .setDescription("Minutos")
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(40320)
+    ),
 
   new SlashCommandBuilder()
     .setName("lock")
-    .setDescription("Bloquea el canal actual"),
+    .setDescription("Bloquea el canal"),
 
   new SlashCommandBuilder()
     .setName("unlock")
-    .setDescription("Desbloquea el canal actual"),
+    .setDescription("Desbloquea el canal"),
 
   new SlashCommandBuilder()
     .setName("config")
-    .setDescription("Muestra la configuración del servidor"),
-
-  new SlashCommandBuilder()
-    .setName("welcome")
-    .setDescription("Configura el canal de bienvenida")
-    .addChannelOption(o => o.setName("canal").setDescription("Canal").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("goodbye")
-    .setDescription("Configura el canal de despedidas")
-    .addChannelOption(o => o.setName("canal").setDescription("Canal").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("stats")
-    .setDescription("Estadísticas del servidor"),
+    .setDescription("Configuración del servidor"),
 
   new SlashCommandBuilder()
     .setName("language")
-    .setDescription("Cambia el idioma de MINICAT")
-    .addStringOption(o =>
-      o.setName("idioma").setDescription("Idioma").setRequired(true)
+    .setDescription("Cambia el idioma")
+    .addStringOption(option =>
+      option.setName("idioma")
+        .setDescription("Idioma")
+        .setRequired(true)
         .addChoices(
           { name: "Español", value: "español colombiano" },
           { name: "Inglés", value: "inglés" }
@@ -741,8 +770,10 @@ const slashCommands = [
 
   new SlashCommandBuilder()
     .setName("userinfo")
-    .setDescription("Información de un usuario")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(false)),
+    .setDescription("Información de usuario")
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario")
+    ),
 
   new SlashCommandBuilder()
     .setName("serverinfo")
@@ -751,22 +782,30 @@ const slashCommands = [
   new SlashCommandBuilder()
     .setName("avatar")
     .setDescription("Muestra un avatar")
-    .addUserOption(o => o.setName("usuario").setDescription("Usuario").setRequired(false)),
+    .addUserOption(option =>
+      option.setName("usuario").setDescription("Usuario")
+    ),
 
   new SlashCommandBuilder()
     .setName("poll")
     .setDescription("Crea una encuesta")
-    .addStringOption(o => o.setName("pregunta").setDescription("Pregunta").setRequired(true)),
+    .addStringOption(option =>
+      option.setName("pregunta").setDescription("Pregunta").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("suggest")
     .setDescription("Envía una sugerencia")
-    .addStringOption(o => o.setName("texto").setDescription("Sugerencia").setRequired(true)),
+    .addStringOption(option =>
+      option.setName("texto").setDescription("Sugerencia").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("8ball")
     .setDescription("Pregunta a la bola mágica")
-    .addStringOption(o => o.setName("pregunta").setDescription("Pregunta").setRequired(true)),
+    .addStringOption(option =>
+      option.setName("pregunta").setDescription("Pregunta").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("coinflip")
@@ -777,732 +816,35 @@ const slashCommands = [
     .setDescription("Lanza un dado"),
 
   new SlashCommandBuilder()
-    .setName("ship")
-    .setDescription("Compatibilidad divertida")
-    .addUserOption(o => o.setName("usuario1").setDescription("Primera persona").setRequired(true))
-    .addUserOption(o => o.setName("usuario2").setDescription("Segunda persona").setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName("joke")
-    
     .setDescription("Cuenta un chiste"),
 
   new SlashCommandBuilder()
     .setName("fact")
-    .setDescription("Comparte un dato curioso"),
-
-  new SlashCommandBuilder()
-    .setName("rps")
-    .setDescription("Piedra, papel o tijera")
-    .addStringOption(o =>
-      o.setName("eleccion")
-        .setDescription("Tu elección")
-        .setRequired(true)
-        .addChoices(
-          { name: "Piedra", value: "piedra" },
-          { name: "Papel", value: "papel" },
-          { name: "Tijera", value: "tijera" }
-        )
-    ),
-
-  new SlashCommandBuilder()
-    .setName("calculator")
-    .setDescription("Calculadora básica")
-    .addNumberOption(o =>
-      o.setName("numero1")
-        .setDescription("Primer número")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("operacion")
-        .setDescription("Operación")
-        .setRequired(true)
-        .addChoices(
-          { name: "Sumar", value: "+" },
-          { name: "Restar", value: "-" },
-          { name: "Multiplicar", value: "*" },
-          { name: "Dividir", value: "/" }
-        )
-    )
-    .addNumberOption(o =>
-      o.setName("numero2")
-        .setDescription("Segundo número")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("choose")
-    .setDescription("Elige entre varias opciones")
-    .addStringOption(o =>
-      o.setName("opciones")
-        .setDescription("Opciones separadas por comas")
-        .setRequired(true)
-    )
-
-].map(command => command.toJSON());
+    .setDescription("Dato curioso")
+];
 
 // =====================================
-// REGISTRO DE COMANDOS SLASH
+// REGISTRO DE COMANDOS
 // =====================================
 
-async function registerSlashCommands() {
+async function registerCommands() {
+  if (!process.env.DISCORD_TOKEN || !process.env.DISCORD_CLIENT_ID) {
+    console.warn("No se registraron comandos: faltan credenciales.");
+    return;
+  }
+
   const rest = new REST({ version: "10" })
     .setToken(process.env.DISCORD_TOKEN);
 
   await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: slashCommands }
+    Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+    { bo
+body: slashCommands.map(command => command.toJSON()) }
   );
 
   console.log("Comandos slash registrados correctamente.");
 }
-
-// =====================================
-// RESPUESTAS DIVERTIDAS
-// =====================================
-
-const eightBallAnswers = [
-  "Sí, definitivamente.",
-  "No lo creo.",
-  "Puede ser.",
-  "Las señales apuntan a que sí.",
-  "Mejor pregunta más tarde.",
-  "No cuentes con ello."
-];
-
-const jokes = [
-  "¿Qué hace una abeja en el gimnasio? ¡Zum-ba!",
-  "¿Qué le dijo un bit a otro? Nos vemos en el bus.",
-  "¿Por qué el libro de matemáticas estaba triste? Tenía muchos problemas."
-];
-
-const facts = [
-  "Los pulpos tienen tres corazones.",
-  "La miel puede conservarse durante muchísimo tiempo.",
-  "Los tiburones existen desde antes que los árboles.",
-  "La luz del Sol tarda aproximadamente ocho minutos en llegar a la Tierra."
-];
-
-// =====================================
-// CALCULADORA
-// =====================================
-
-function calculate(a, operator, b) {
-  if (operator === "+") return a + b;
-  if (operator === "-") return a - b;
-  if (operator === "*") return a * b;
-
-  if (operator === "/") {
-    if (b === 0) {
-      throw new Error("No se puede dividir entre cero.");
-    }
-
-    return a / b;
-  }
-
-  throw new Error("Operación no válida.");
-}
-
-// =====================================
-// EJECUTOR DE COMANDOS
-// =====================================
-
-async function executeCommand(ctx, name, args = {}) {
-  const isSlash = Boolean(ctx.isChatInputCommand?.());
-  const guild = ctx.guild;
-  const member = ctx.member;
-  const user = ctx.user || ctx.author;
-  const channel = ctx.channel;
-
-  const reply = async content => {
-    if (isSlash) {
-      if (ctx.deferred || ctx.replied) {
-        return ctx.editReply(content);
-      }
-
-      return ctx.reply(content);
-    }
-
-    return ctx.reply(content);
-  };
-
-  const defer = async () => {
-    if (isSlash && !ctx.deferred && !ctx.replied) {
-      await ctx.deferReply();
-    }
-  };
-
-  const getUser = key =>
-    isSlash ? ctx.options.getUser(key) : args[key];
-
-  const getString = key =>
-    isSlash ? ctx.options.getString(key) : args[key];
-
-  const getNumber = key =>
-    isSlash ? ctx.options.getNumber(key) : args[key];
-
-  const moderatorOnly = async () => {
-    if (!member || !member.permissions.has(
-      PermissionFlagsBits.ModerateMembers
-    ) && !member.permissions.has(
-      PermissionFlagsBits.Administrator
-    )) {
-      await reply("No tienes permisos para utilizar este comando.");
-      return false;
-    }
-
-    return true;
-  };
-
-  const adminOnly = async () => {
-    if (!member || !member.permissions.has(
-      PermissionFlagsBits.Administrator
-    )) {
-      await reply("Este comando requiere permisos de administrador.");
-      return false;
-    }
-
-    return true;
-  };
-
-  // IA
-  if (name === "chat") {
-    const question = args.message || getString("mensaje");
-
-    if (!question) return reply("Escribe un mensaje.");
-
-    await defer();
-
-    try {
-      const answer = await runAI(
-        user.id,
-        guild.id,
-        channel.id,
-        question
-      );
-
-      return isSlash
-        ? interactionLong(ctx, answer)
-        : replyLong(ctx, answer);
-
-    } catch (error) {
-      console.error(error);
-      return reply("No pude responder en este momento.");
-    }
-  }
-
-  if (["resumir", "traducir", "codigo", "explicar"].includes(name)) {
-    let prompt;
-
-    if (name === "resumir") {
-      prompt = `Resume este texto:\n${args.text || getString("texto")}`;
-    }
-
-    if (name === "traducir") {
-      prompt = `Traduce al idioma ${args.language || getString("idioma")}:\n${args.text || getString("texto")}`;
-    }
-
-    if (name === "codigo") {
-      prompt = `Crea código en ${args.language || getString("lenguaje")}: ${args.description || getString("descripcion")}`;
-    }
-
-    if (name === "explicar") {
-      prompt = `Explica este tema de forma sencilla: ${args.text || getString("tema")}`;
-    }
-
-    await defer();
-
-    try {
-      const answer = await runAI(
-        user.id,
-        guild.id,
-        channel.id,
-        prompt
-      );
-
-      return isSlash
-        ? interactionLong(ctx, answer)
-        : replyLong(ctx, answer);
-
-    } catch (error) {
-      console.error(error);
-      return reply("No pude procesar tu solicitud.");
-    }
-  }
-
-  // IMÁGENES
-  if (name === "imagine") {
-    const prompt = args.prompt || getString("descripcion");
-
-    if (!prompt) return reply("Describe la imagen que quieres generar.");
-
-    await defer();
-
-    try {
-      const image = await runImage(prompt);
-
-      if (isSlash) {
-        return ctx.editReply({
-          content: "🐱 ¡Tu imagen está lista!",
-          files: [image]
-        });
-      }
-
-      return ctx.reply({
-        content: "🐱 ¡Tu imagen está lista!",
-        files: [image]
-      });
-
-    } catch (error) {
-      console.error("Error de imagen:", error);
-      return reply("No pude generar la imagen. Inténtalo más tarde.");
-    }
-  }
-
-  // MODERACIÓN
-  if (name === "warn") {
-    if (!await moderatorOnly()) return;
-
-    const target = getUser("usuario");
-    const reason = getString("razon") || "Sin razón especificada";
-
-    if (!target) return reply("Selecciona un usuario.");
-
-    addWarning(guild.id, target.id, user.id, reason);
-
-    return reply(`⚠️ ${target} recibió una advertencia.\nRazón: ${reason}`);
-  }
-
-  if (name === "warnings") {
-    if (!await moderatorOnly()) return;
-
-    const target = getUser("usuario");
-    if (!target) return reply("Selecciona un usuario.");
-
-    const warnings = getWarnings(guild.id, target.id);
-
-    if (!warnings.length) {
-      return reply(`${target} no tiene advertencias.`);
-    }
-
-    return reply(
-      warnings.map((w, i) =>
-        `**${i + 1}.** ${w.reason} — <@${w.moderatorId}>`
-      ).join("\n")
-    );
-  }
-
-  if (name === "clear") {
-    if (!await moderatorOnly()) return;
-
-    const amount = ctx.options.getInteger("cantidad");
-
-    try {
-      const deleted = await channel.bulkDelete(amount, true);
-      return reply(`Se eliminaron ${deleted.size} mensajes.`);
-    } catch {
-      return reply("No pude eliminar los mensajes. Revisa mis permisos.");
-    }
-  }
-
-  if (["kick", "ban"].includes(name)) {
-    if (!await moderatorOnly()) return;
-
-    const target = getUser("usuario");
-    const reason = getString("razon") || "Sin razón especificada";
-
-    if (!target) return reply("Selecciona un usuario.");
-
-    try {
-      const targetMember = await guild.members.fetch(target.id);
-
-      if (targetMember.permissions.has(PermissionFlagsBits.Administrator)) {
-        return reply("No puedo sancionar a un administrador.");
-      }
-
-      if (name === "kick") {
-        await targetMember.kick(reason);
-        return reply(`${target.tag} fue expulsado.`);
-      }
-
-      await guild.members.ban(target.id, { reason });
-      return reply(`${target.tag} fue baneado.`);
-
-    } catch {
-      return reply("No pude completar la acción. Revisa mis permisos y jerarquía.");
-    }
-  }
-
-  if (name === "unban") {
-    if (!await moderatorOnly()) return;
-
-    const id = getString("id");
-
-    if (!/^\d{17,20}$/.test(id || "")) {
-      return reply("Escribe un ID válido.");
-    }
-
-    try {
-      await guild.members.unban(id);
-      return reply(`Se retiró el baneo de ${id}.`);
-    } catch {
-      return reply("No pude retirar ese baneo.");
-    }
-  }
-
-  if (name === "timeout") {
-    if (!await moderatorOnly()) return;
-
-    const target = getUser("usuario");
-    const minutes = ctx.options.getInteger("minutos");
-    const reason = getString("razon") || "Sin razón especificada";
-
-    if (!target) return reply("Selecciona un usuario.");
-
-    try {
-      const targetMember = await guild.members.fetch(target.id);
-
-      if (targetMember.permissions.has(PermissionFlagsBits.Administrator)) {
-        return reply("No puedo aplicar timeout a un administrador.");
-      }
-
-      await targetMember.timeout(minutes * 60000, reason);
-
-      return reply(`${target} recibió timeout de ${minutes} minutos.`);
-    } catch {
-      return reply("No pude aplicar el timeout.");
-    }
-  }
-
-  if (name === "lock" || name === "unlock") {
-    if (!await moderatorOnly()) return;
-
-    try {
-      await channel.permissionOverwrites.edit(
-        guild.roles.everyone,
-        { SendMessages: name === "lock" ? false : null }
-      );
-
-      return reply(name === "lock"
-        ? "🔒 Canal bloqueado."
-        : "🔓 Canal desbloqueado."
-      );
-    } catch {
-      return reply("No pude cambiar los permisos del canal.");
-    }
-  }
-
-  // ADMINISTRACIÓN
-  if (name === "config") {
-    const settings = getGuildSettings(guild.id);
-
-    return reply(
-      `**⚙️ Configuración**\n` +
-      `Bienvenida: ${settings.welcomeChannel ? `<#${settings.welcomeChannel}>` : "No configurada"}\n` +
-      `Despedidas: ${settings.goodbyeChannel ? `<#${settings.goodbyeChannel}>` : "No configurada"}\n` +
-      `Idioma: ${settings.language || "español colombiano"}`
-    );
-  }
-
-  if (name === "welcome" || name === "goodbye") {
-    if (!await adminOnly()) return;
-
-    const target = ctx.options.getChannel("canal");
-
-    saveGuildSetting(
-      guild.id,
-      name === "welcome" ? "welcomeChannel" : "goodbyeChannel",
-      target.id
-    );
-
-    return reply(`Configuración guardada en ${target}.`);
-  }
-
-  if (name === "stats") {
-    return reply(
-      `**📊 Estadísticas**\nMiembros: ${guild.memberCount}\nCanales: ${guild.channels.cache.size}\nRoles: ${guild.roles.cache.size}`
-    );
-  }
-
-  if (name === "language") {
-    if (!await adminOnly()) return;
-
-    const language = getString("idioma");
-
-    saveGuildSetting(guild.id, "language", language);
-
-    return reply(`Idioma actualizado: ${language}.`);
-  }
-
-  // COMUNIDAD
-  if (name === "userinfo") {
-    const target = getUser("usuario") || user;
-
-    return reply(
-      `**👤 Usuario**\nNombre: ${target.username}\nID: ${target.id}\nCuenta creada: <t:${Math.floor(target.createdTimestamp / 1000)}:D>`
-    );
-  }
-
-  if (name === "serverinfo") {
-    return reply(
-      `**🌐 ${guild.name}**\nMiembros: ${guild.memberCount}\nCanales: ${guild.channels.cache.size}\nRoles: ${guild.roles.cache.size}`
-    );
-  }
-
-  if (name === "avatar") {
-    const target = getUser("usuario") || user;
-
-    return reply(
-      `**Avatar de ${target.username}**\n${target.displayAvatarURL({ size: 1024 })}`
-    );
-  }
-
-  if (name === "poll") {
-    const question = getString("pregunta");
-
-    const poll = await channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x7138ff)
-          .setTitle("📊 Encuesta")
-          .setDescription(question)
-      ]
-    });
-
-    await poll.react("👍");
-    await poll.react("👎");
-
-    return reply(`Encuesta publicada: ${poll.url}`);
-  }
-
-  if (name === "suggest") {
-    const text = getString("texto");
-
-    const suggestion = await channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x7138ff)
-          .setTitle("💡 Sugerencia")
-          .setDescription(text)
-          .setFooter({ text: `Enviada por ${user.username}` })
-      ]
-    });
-
-    await suggestion.react("👍");
-    await suggestion.react("👎");
-
-    return reply("Tu sugerencia fue publicada.");
-  }
-
-  // DIVERSIÓN
-  if (name === "8ball") {
-    return reply(
-      `🎱 ${eightBallAnswers[Math.floor(Math.random() * eightBallAnswers.length)]}`
-    );
-  }
-
-  if (name === "coinflip") {
-    return reply(`🪙 ${Math.random() < 0.5 ? "Cara" : "Cruz"}`);
-  }
-
-  if (name === "dice") {
-    return reply(`🎲 Resultado: ${Math.floor(Math.random() * 6) + 1}`);
-  }
-
-  if (name === "ship") {
-    const first = getUser("usuario1");
-    const second = getUser("usuario2");
-
-    const percentage = Math.floor(Math.random() * 101);
-
-    return reply(`💞 ${first} + ${second}: **${percentage}%**`);
-  }
-
-  if (name === "joke") {
-    return reply(jokes[Math.floor(Math.random() * jokes.length)]);
-  }
-
-  if (name === "fact") {
-    return reply(facts[Math.floor(Math.random() * facts.length)]);
-  }
-
-  if (name === "rps") {
-    const choice = getString("eleccion");
-    const choices = ["piedra", "papel", "tijera"];
-
-    const botChoice = choices[Math.floor(Math.random() * 3)];
-
-    let result = "Empate.";
-
-    if (
-      (choice === "piedra" && botChoice === "tijera") ||
-      (choice === "papel" && botChoice === "piedra") ||
-      (choice === "tijera" && botChoice === "papel")
-    ) {
-      result = "¡Ganaste!";
-    } else if (choice !== botChoice) {
-      result = "Ganó MINICAT.";
-    }
-
-    return reply(`Tú: ${choice}\nMINICAT: ${botChoice}\n${result}`);
-  }
-
-  // HERRAMIENTAS
-  if (name === "calculator") {
-    try {
-      const result = calculate(
-        getNumber("numero1"),
-        getString("operacion"),
-        getNumber("numero2")
-      );
-
-      return reply(`🧮 Resultado: **${result}**`);
-    } catch (error) {
-      return reply(error.message);
-    }
-  }
-
-  if (name === "choose") {
-    const options = getString("opciones")
-      .split(",")
-      .map(option => option.trim())
-      .filter(Boolean);
-
-    if (options.length < 2) {
-      return reply("Escribe al menos dos opciones separadas por comas.");
-    }
-
-    return reply(
-      `🎯 MINICAT elige: **${options[Math.floor(Math.random() * options.length)]}**`
-    );
-  }
-
-  if (name === "ping") {
-    return reply(`🐱 Pong: ${client.ws.ping} ms`);
-  }
-
-  if (name === "help") {
-    return reply(helpMessage());
-  }
-
-  return reply("Comando no reconocido.");
-}
-
-// =====================================
-// MENSAJES CON PREFIJO Y MENCIÓN
-// =====================================
-
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot || !message.guild) return;
-
-  const content = message.content.trim();
-
-  if (!content) return;
-
-  const mentionPattern = new RegExp(
-    `^<@!?${client.user.id}>\\s*`
-  );
-
-  if (mentionPattern.test(content)) {
-    const question = content.replace(mentionPattern, "").trim();
-
-    if (!question) {
-      return message.reply("¡Hola! 🐱 ¿Qué necesitas?");
-    }
-
-    await message.channel.sendTyping();
-
-    try {
-      const answer = await runAI(
-        message.author.id,
-        message.guild.id,
-        message.channel.id,
-        question
-      );
-
-      return replyLong(message, answer);
-    } catch (error) {
-      console.error(error);
-      return message.reply("No pude responder en este momento.");
-    }
-  }
-
-  if (!content.startsWith(PREFIX)) return;
-
-  const parts = content.slice(1).trim().split(/\s+/);
-  const name = (parts.shift() || "").toLowerCase();
-  const rest = parts.join(" ");
-
-  const aliases = {
-    hola: "chat",
-    imagine: "imagine",
-    resumir: "resumir",
-    traducir: "traducir",
-    codigo: "codigo",
-    explicar: "explicar"
-  };
-
-  const command = aliases[name] || name;
-
-  if (command === "chat") {
-    if (!rest) {
-      return message.reply("Escribe tu mensaje.");
-    }
-
-    await message.channel.sendTyping();
-
-    try {
-      const answer = await runAI(
-        message.author.id,
-        message.guild.id,
-        message.channel.id,
-        rest
-      );
-
-      return replyLong(message, answer);
-    } catch (error) {
-      console.error(error);
-      return message.reply("No pude responder en este momento.");
-    }
-  }
-
-  if (command === "imagine") {
-    return executeCommand(message, "imagine", {
-      prompt: rest
-    });
-  }
-
-  if (command === "resumir" ||
-      command === "traducir" ||
-      command === "explicar") {
-    return executeCommand(message, command, {
-      text: rest,
-      language: "español"
-    });
-  }
-
-  if (command === "codigo") {
-    const firstSpace = rest.indexOf(" ");
-
-    if (firstSpace === -1) {
-      return message.reply("Uso: `.codigo javascript crea una calculadora`");
-    }
-
-    return executeCommand(message, "codigo", {
-      language: rest.slice(0, firstSpace),
-      description: rest.slice(firstSpace + 1)
-    });
-  }
-
-  if (command === "help") return message.reply(helpMessage());
-
-  if (command === "ping") {
-    return message.reply(`🐱 Pong: ${client.ws.ping} ms`);
-  }
-
-  // El resto de comandos con prefijo se ampliará
-  // con sus argumentos y validaciones correspondientes.
-});
 
 // =====================================
 // INTERACCIONES SLASH
@@ -1511,16 +853,363 @@ client.on(Events.MessageCreate, async message => {
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  const name = interaction.commandName;
+
   try {
-    await executeCommand(
-      interaction,
-      interaction.commandName
-    );
+    if (name === "ping") {
+      return interaction.reply(`🏓 Pong: ${client.ws.ping} ms`);
+    }
+
+    if (name === "help") {
+      return interaction.reply({
+        content: helpMessage(),
+        ephemeral: true
+      });
+    }
+
+    if (name === "chat") {
+      await interaction.deferReply();
+
+      const question = interaction.options.getString("mensaje");
+
+      const answer = await runAI(
+        interaction.user.id,
+        interaction.guildId,
+        interaction.channelId,
+        question
+      );
+
+      return interaction.editReply(answer.slice(0, 2000));
+    }
+
+    if (name === "imagine") {
+      await interaction.deferReply();
+
+      const prompt = interaction.options.getString("descripcion");
+      const buffer = await generateImageBuffer(prompt);
+
+      return interaction.editReply({
+        files: [
+          new AttachmentBuilder(buffer, {
+            name: "minicat-imagen.png"
+          })
+        ]
+      });
+    }
+
+    if (name === "resumir" || name === "traducir" || name === "explicar") {
+      await interaction.deferReply();
+
+      let question = "";
+
+      if (name === "resumir") {
+        question = "Resume este texto:\n" +
+          interaction.options.getString("texto");
+      }
+
+      if (name === "traducir") {
+        question =
+          `Traduce al idioma ${interaction.options.getString("idioma")}:\n` +
+          interaction.options.getString("texto");
+      }
+
+      if (name === "explicar") {
+        question =
+          "Explícame este tema de forma clara: " +
+          interaction.options.getString("tema");
+      }
+
+      const answer = await runAI(
+        interaction.user.id,
+        interaction.guildId,
+        interaction.channelId,
+        question
+      );
+
+      return interaction.editReply(answer.slice(0, 2000));
+    }
+
+    if (!interaction.guild || !interaction.memberPermissions) {
+      return interaction.reply({
+        content: "Este comando requiere un servidor.",
+        ephemeral: true
+      });
+    }
+
+    const member = interaction.member;
+    const target = interaction.options.getMember("usuario");
+
+    if (["warn", "warnings", "clear", "kick", "ban", "timeout", "lock", "unlock", "language"].includes(name)) {
+      if (
+        !member.permissions.has(PermissionFlagsBits.ModerateMembers) &&
+        !member.permissions.has(PermissionFlagsBits.Administrator)
+      ) {
+        return interaction.reply({
+          content: "No tienes permisos para este comando.",
+          ephemeral: true
+        });
+      }
+    }
+
+    if (name === "warn") {
+      const user = interaction.options.getUser("usuario");
+      const reason = interaction.options.getString("razon");
+
+      const database = readDatabase();
+
+      if (!database.warnings[interaction.guildId]) {
+        database.warnings[interaction.guildId] = {};
+      }
+
+      if (!database.warnings[interaction.guildId][user.id]) {
+        database.warnings[interaction.guildId][user.id] = [];
+      }
+
+      database.warnings[interaction.guildId][user.id].push({
+        moderatorId: interaction.user.id,
+        reason,
+        date: new Date().toISOString()
+      });
+
+      saveDatabase(database);
+
+      return interaction.reply(
+        `⚠️ ${user.tag} recibió una advertencia.\nRazón: ${reason}`
+      );
+    }
+
+    if (name === "warnings") {
+      const user = interaction.options.getUser("usuario");
+      const warnings =
+        readDatabase().warnings[interaction.guildId]?.[user.id] || [];
+
+      return interaction.reply({
+        content: warnings.length
+          ? warnings.map((warning, index) =>
+              `${index + 1}. ${warning.reason}`
+            ).join("\n")
+          : "Este usuario no tiene advertencias.",
+        ephemeral: true
+      });
+    }
+
+    if (name === "clear") {
+      if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+        return interaction.reply({
+          content: "Necesitas permiso para gestionar mensajes.",
+          ephemeral: true
+        });
+      }
+
+      const amount = interaction.options.getInteger("cantidad");
+      await interaction.channel.bulkDelete(amount, true);
+
+      return interaction.reply({
+        content: `Se eliminaron ${amount} mensajes.`,
+        ephemeral: true
+      });
+    }
+
+    if (name === "kick") {
+      if (!member.permissions.has(PermissionFlagsBits.KickMembers)) {
+        return interaction.reply({
+          content: "No tienes permiso para expulsar usuarios.",
+          ephemeral: true
+        });
+      }
+
+      if (!target?.kickable) {
+        return interaction.reply({
+          content: "No puedo expulsar a ese usuario.",
+          ephemeral: true
+        });
+      }
+
+      await target.kick(
+        interaction.options.getString("razon") || "Sin razón"
+      );
+
+      return interaction.reply("Usuario expulsado.");
+    }
+
+    if (name === "ban") {
+      if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        return interaction.reply({
+          content: "No tienes permiso para banear usuarios.",
+          ephemeral: true
+        });
+      }
+
+      if (!target?.bannable) {
+        return interaction.reply({
+          content: "No puedo banear a ese usuario.",
+          ephemeral: true
+        });
+      }
+
+      await target.ban({
+        reason: interaction.options.getString("razon") || "Sin razón"
+      });
+
+      return interaction.reply("Usuario baneado.");
+    }
+
+    if (name === "timeout") {
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({
+          content: "No tienes permiso para aplicar timeout.",
+          ephemeral: true
+        });
+      }
+
+      const minutes = interaction.options.getInteger("minutos");
+
+      if (!target?.moderatable) {
+        return interaction.reply({
+          content: "No puedo moderar a ese usuario.",
+          ephemeral: true
+        });
+      }
+
+      await target.timeout(minutes * 60 * 1000);
+
+      return interaction.reply(
+        `Timeout aplicado durante ${minutes} minutos.`
+      );
+    }
+
+    if (name === "lock" || name === "unlock") {
+      if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: "No tienes permiso para administrar canales.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.channel.permissionOverwrites.edit(
+        interaction.guild.roles.everyone,
+        {
+          SendMessages: name === "unlock"
+        }
+      );
+
+      return interaction.reply(
+        name === "lock" ? "🔒 Canal bloqueado." : "🔓 Canal desbloqueado."
+      );
+    }
+
+    if (name === "language") {
+      const language = interaction.options.getString("idioma");
+      const database = readDatabase();
+
+      if (!database.servers[interaction.guildId]) {
+        database.servers[interaction.guildId] = {};
+      }
+
+      database.servers[interaction.guildId].language = language;
+      saveDatabase(database);
+
+      return interaction.reply(`Idioma actualizado: ${language}`);
+    }
+
+    if (name === "config") {
+      const settings = readDatabase().servers[interaction.guildId] || {};
+
+      return interaction.reply({
+        content:
+          `**Configuración de MINICAT IA**\n` +
+          `Idioma: ${settings.language || "español colombiano"}`,
+        ephemeral: true
+      });
+    }
+
+    if (name === "userinfo") {
+      const user = interaction.options.getUser("usuario") || interaction.user;
+
+      return interaction.reply(
+        `**Usuario:** ${user.tag}\n**ID:** ${user.id}\n**Creado:** <t:${Math.floor(user.createdTimestamp / 1000)}:D>`
+      );
+    }
+
+    if (name === "serverinfo") {
+      const guild = interaction.guild;
+
+      return interaction.reply(
+        `**${guild.name}**\nMiembros: ${guild.memberCount}\nID: ${guild.id}`
+      );
+    }
+
+    if (name === "avatar") {
+      const user = interaction.options.getUser("usuario") || interaction.user;
+
+      return interaction.reply(
+        user.displayAvatarURL({ size: 1024 })
+      );
+    }
+
+    if (name === "poll") {
+      const question = interaction.options.getString("pregunta");
+
+      const poll = await interaction.reply({
+        content: `📊 **${question}**\n\n👍 Sí\n👎 No`,
+        fetchReply: true
+      });
+
+      await poll.react("👍");
+      await poll.react("👎");
+      return;
+    }
+
+    if (name === "suggest") {
+      return interaction.reply({
+        content: `💡 Sugerencia recibida:\n${interaction.options.getString("texto")}`,
+        ephemeral: true
+      });
+    }
+
+    if (name === "8ball") {
+      const answers = [
+        "Sí, definitivamente.",
+        "Es posible.",
+        "No lo creo.",
+        "Pregunta más tarde.",
+        "Todo apunta a que sí."
+      ];
+
+      return interaction.reply(
+        answers[Math.floor(Math.random() * answers.length)]
+      );
+    }
+
+    if (name === "coinflip") {
+      return interaction.reply(
+        Math.random() < 0.5 ? "🪙 Cara" : "🪙 Cruz"
+      );
+    }
+
+    if (name === "dice") {
+      return interaction.reply(
+        `🎲 Resultado: ${Math.floor(Math.random() * 6) + 1}`
+      );
+    }
+
+    if (name === "joke") {
+      return interaction.reply(
+        "¿Por qué el programador confundió Halloween con Navidad? Porque OCT 31 = DEC 25."
+      );
+    }
+
+    if (name === "fact") {
+      return interaction.reply(
+        "🐱 Los gatos pueden hacer más de 100 sonidos vocales diferentes."
+      );
+    }
+
   } catch (error) {
-    console.error("Error de interacción:", error);
+    console.error("Error en comando:", error);
 
     const response = {
-      content: "Ocurrió un error al ejecutar el comando.",
+      content: "Ocurrió un error ejecutando el comando.",
       ephemeral: true
     };
 
@@ -1533,166 +1222,357 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // =====================================
-// BIENVENIDAS Y DESPEDIDAS
+// COMANDOS CON PREFIJO Y MENCIÓN
 // =====================================
 
-client.on(Events.GuildMemberAdd, async member => {
-  try {
-    const settings = getGuildSettings(member.guild.id);
+client.on(Events.MessageCreate, async message => {
+  if (message.author.bot || !message.guild) return;
 
-    if (!settings.welcomeChannel) return;
+  const content = message.content.trim();
+  const mention = `<@${client.user?.id}>`;
+  const mentionNick = `<@!${client.user?.id}>`;
 
-    const channel = await member.guild.channels.fetch(
-      settings.welcomeChannel
-    ).catch(() => null);
+  const mentioned =
+    content.startsWith(mention) ||
+    content.startsWith(mentionNick);
 
-    if (channel) {
-      await channel.send(
-        `🐱 ¡Bienvenido/a ${member}!`
+  const repliedToBot =
+    message.reference?.messageId &&
+    (await message.channel.messages.fetch(message.reference.messageId)
+      .catch(() => null))?.author?.id === client.user.id;
+
+  if (content.startsWith(PREFIX)) {
+    const parts = content.slice(PREFIX.length).trim().split(/\s+/);
+    const command = (parts.shift() || "").toLowerCase();
+    const text = parts.join(" ");
+
+    try {
+      if (command === "help") {
+        return replyLong(message, helpMessage());
+      }
+
+      if (command === "ping") {
+        return message.reply(`🏓 Pong: ${client.ws.ping} ms`);
+      }
+
+      if (["chat", "hola"].includes(command)) {
+        if (!text) {
+          return message.reply("Escribe un mensaje para conversar conmigo.");
+        }
+
+        const answer = await runAI(
+          message.author.id,
+          message.guild.id,
+          message.channel.id,
+          text
+        );
+
+        return replyLong(message, answer);
+      }
+
+      if (command === "imagine") {
+        if (!text) {
+          return message.reply("Describe la imagen que quieres generar.");
+        }
+
+        await message.channel.sendTyping();
+
+        const buffer = await generateImageBuffer(text);
+
+        return message.reply({
+          files: [
+            new AttachmentBuilder(buffer, {
+              name: "minicat-imagen.png"
+            })
+          ]
+        });
+      }
+
+      if (command === "warn") {
+        if (!isModerator(message.member)) {
+          return message.reply("No tienes permisos.");
+        }
+
+        const user = message.mentions.users.first();
+        if (!user) return message.reply("Menciona un usuario.");
+
+        const reason = text.replace(/<@!?\d+>/, "").trim() || "Sin razón";
+
+        const database = readDatabase();
+
+        database.warnings[message.guild.id] ||= {};
+        database.warnings[message.guild.id][user.id] ||= [];
+
+        database.warnings[message.guild.id][user.id].push({
+          moderatorId: message.author.id,
+          reason,
+          date: new Date().toISOString()
+        });
+
+        saveDatabase(database);
+
+        return message.reply(`⚠️ Advertencia registrada para ${user.tag}.`);
+      }
+
+      if (command === "warnings") {
+        if (!isModerator(message.member)) {
+          return message.reply("No tienes permisos.");
+        }
+
+        const user = message.mentions.users.first();
+        if (!user) return message.reply("Menciona un usuario.");
+
+        const warnings =
+          readDatabase().warnings[message.guild.id]?.[user.id] || [];
+
+        return message.reply(
+          warnings.length
+            ? warnings.map((item, index) =>
+                `${index + 1}. ${item.reason}`
+              ).join("\n")
+            : "Sin advertencias."
+        );
+      }
+
+      if (command === "clear") {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+          return message.reply("No tienes permiso.");
+        }
+
+        const amount = Number(parts[0]);
+
+        if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
+          return message.reply("Usa .clear 1-100");
+        }
+
+        await message.channel.bulkDelete(amount, true);
+        return message.channel.send(`Se eliminaron ${amount} mensajes.`);
+      }
+
+      if (command === "kick") {
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
+          return message.reply("No tienes permiso.");
+        }
+
+        const target = message.mentions.members.first();
+
+        if (!target?.kickable) {
+          return message.reply("No puedo expulsar a ese usuario.");
+        }
+
+        await target.kick("Expulsado mediante MINICAT IA");
+        return message.reply("Usuario expulsado.");
+      }
+
+      if (command === "ban") {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+          return message.reply("No tienes permiso.");
+        }
+
+        const target = message.mentions.members.first();
+
+        if (!target?.bannable) {
+          return message.reply("No puedo banear a ese usuario.");
+        }
+
+        await target.ban({
+          reason: "Baneado mediante MINICAT IA"
+        });
+
+        return message.reply("Usuario baneado.");
+      }
+
+      if (command === "timeout") {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return message.reply("No tienes permiso.");
+        }
+
+        const target = message.mentions.members.first();
+        const minutes = Number(parts[1]);
+
+        if (!target?.moderatable || !Number.isInteger(minutes) ||
+            minutes < 1 || minutes > 40320) {
+          return message.reply("Uso: .timeout @usuario minutos");
+        }
+
+        await target.timeout(minutes * 60 * 1000);
+        return message.reply(`Timeout aplicado: ${minutes} minutos.`);
+      }
+
+      if (command === "lock" || command === "unlock") {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return message.reply("No tienes permiso.");
+        }
+
+        await message.channel.permissionOverwrites.edit(
+          message.guild.roles.everyone,
+          { SendMessages: command === "unlock" }
+        );
+
+        return message.reply(
+          command === "lock" ? "🔒 Canal bloqueado." : "🔓 Canal desbloqueado."
+        );
+      }
+
+      if (command === "language") {
+        if (!isAdministrator(message.member)) {
+          return message.reply("Solo administradores pueden cambiar el idioma.");
+        }
+
+        const language = parts.join(" ");
+
+        if (!["es", "español", "inglés", "en"].includes(language.toLowerCase())) {
+          return message.reply("Idiomas disponibles: español, inglés.");
+        }
+
+        const database = readDatabase();
+        database.servers[message.guild.id] ||= {};
+        database.servers[message.guild.id].language =
+          ["en", "inglés"].includes(language.toLowerCase())
+            ? "inglés"
+            : "español colombiano";
+
+        saveDatabase(database);
+
+        return message.reply("Idioma actualizado.");
+      }
+
+      if (command === "8ball") {
+        const answers = [
+          "Sí, definitivamente.",
+          "Es posible.",
+          "No lo creo.",
+          "Pregunta más tarde."
+        ];
+
+        return message.reply(
+          answers[Math.floor(Math.random() * answers.length)]
+        );
+      }
+
+      if (command === "coinflip") {
+        return message.reply(
+          Math.random() < 0.5 ? "🪙 Cara" : "🪙 Cruz"
+        );
+      }
+
+      if (command === "dice") {
+        return message.reply(
+          `🎲 ${Math.floor(Math.random() * 6) + 1}`
+        );
+      }
+
+      if (command === "calculator") {
+        return message.reply(
+          "La calculadora avanzada todavía no está disponible."
+        );
+      }
+
+      if (command === "choose") {
+        const choices = text.split("|").map(item => item.trim()).filter(Boolean);
+
+        if (choices.length < 2) {
+          return message.reply("Uso: .choose opción 1 | opción 2");
+        }
+
+        return message.reply(
+          `🎯 Elijo: **${choices[Math.floor(Math.random() * choices.length)]}**`
+        );
+      }
+
+    } catch (error) {
+      console.error("Error en prefijo:", error);
+      return message.reply("Ocurrió un error ejecutando el comando.");
+    }
+
+    return;
+  }
+
+  if (mentioned || repliedToBot) {
+    const question = content
+      .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
+      .trim();
+
+    if (!question) {
+      return message.reply("¡Hola! ¿En qué puedo ayudarte?");
+    }
+
+    try {
+      await message.channel.sendTyping();
+
+      const answer = await runAI(
+        message.author.id,
+        message.guild.id,
+        message.channel.id,
+        question
       );
+
+      return replyLong(message, answer);
+
+    } catch (error) {
+      console.error("Error de IA en Discord:", error);
+      return message.reply("No pude responder en este momento.");
     }
-  } catch (error) {
-    console.error(error);
-  }
-});
-
-client.on(Events.GuildMemberRemove, async member => {
-  try {
-    const settings = getGuildSettings(member.guild.id);
-
-    if (!settings.goodbyeChannel) return;
-
-    const channel = await member.guild.channels.fetch(
-      settings.goodbyeChannel
-    ).catch(() => null);
-
-    if (channel) {
-      await channel.send(
-        `👋 ${member.user.username} ha salido del servidor.`
-      );
-    }
-  } catch (error) {
-    console.error(error);
   }
 });
 
 // =====================================
-// ESTADÍSTICAS
+// PRESENCIA
 // =====================================
 
-client.on(Events.MessageCreate, message => {
-  if (!message.guild || message.author.bot) return;
+const activities = [
+  { name: "MINICAT IA", type: ActivityType.Playing },
+  { name: "tus preguntas", type: ActivityType.Listening },
+  { name: "la comunidad", type: ActivityType.Watching }
+];
 
-  try {
-    const database = readDatabase();
+let activityIndex = 0;
 
-    if (!database.statistics[message.guild.id]) {
-      database.statistics[message.guild.id] = {
-        messages: 0
-      };
-    }
+function updatePresence() {
+  if (!client.user) return;
 
-    database.statistics[message.guild.id].messages++;
-
-    saveDatabase(database);
-  } catch (error) {
-        console.error("Error actualizando estadísticas:", error);
-  }
-});
-
-// =====================================
-// EVENTO: BOT LISTO
-// =====================================
-
-client.once(Events.ClientReady, async () => {
-  console.log(`MINICAT IA conectado como ${client.user.tag}`);
-
-  await registerSlashCommands();
+  const activity = activities[activityIndex];
 
   client.user.setPresence({
-    status: "online",
-    activities: [
-      {
-        name: "MINICAT IA | Inteligencia Artificial",
-        type: ActivityType.Watching
-      }
-    ]
+    activities: [activity],
+    status: "online"
   });
 
-  setInterval(() => {
-    const activities = [
-      {
-        name: "MINICAT IA | Inteligencia Artificial",
-        type: ActivityType.Watching
-      },
-      {
-        name: "Usa /help para ver mis comandos",
-        type: ActivityType.Playing
-      },
-      {
-        name: "Conversando contigo",
-        type: ActivityType.Listening
-      }
-    ];
+  activityIndex = (activityIndex + 1) % activities.length;
+}
 
-    const activity = activities[
-      Math.floor(Math.random() * activities.length)
-    ];
+client.once(Events.ClientReady, () => {
+  console.log(`MINICAT IA CONECTADO: ${client.user.tag}`);
 
-    client.user.setActivity(activity.name, {
-      type: activity.type
-    });
-  }, 5 * 60 * 1000);
+  updatePresence();
+  setInterval(updatePresence, 5 * 60 * 1000);
 });
 
 // =====================================
-// API DE ESTADO
-// =====================================
-
-app.get("/api/status", (req, res) => {
-  res.json({
-    success: true,
-    name: "MINICAT IA",
-    status: client.isReady() ? "online" : "starting",
-    website: "online",
-    timestamp: new Date().toISOString()
-  });
-});
-
-// =====================================
-// ARCHIVOS DE LA PÁGINA WEB
-// =====================================
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-app.get("/chat", requireLogin, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// =====================================
-// RUTA NO ENCONTRADA
-// =====================================
-
-app.use((req, res) => {
-  res.status(404).send("Página no encontrada.");
-});
-
-// =====================================
-// INICIAR SERVIDOR
+// INICIO DEL SERVIDOR
 // =====================================
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`MINICAT IA web iniciado en el puerto ${PORT}`);
+  console.log(`MINICAT IA WEB ACTIVA EN PUERTO ${PORT}`);
+
+  if (!fs.existsSync(LOGO_PATH)) {
+    console.warn("ATENCIÓN: No se encontró el logo oficial en public/.");
+  }
 });
 
-// =====================================
-// CONECTAR BOT A DISCORD
-// =====================================
+async function startDiscord() {
+  if (!process.env.DISCORD_TOKEN) {
+    console.warn("DISCORD_TOKEN no configurado. Bot apagado.");
+    return;
+  }
 
-client.login(process.env.DISCORD_TOKEN).catch(error => {
-  console.error("Error conectando MINICAT IA a Discord:", error);
-});
+  try {
+    await registerCommands();
+    await client.login(process.env.DISCORD_TOKEN);
+  } catch (error) {
+    console.error("Error iniciando Discord:", error);
+  }
+}
+
+startDiscord();
+                          
