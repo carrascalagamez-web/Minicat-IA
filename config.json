@@ -2,43 +2,32 @@
   "bot": {
     "name": "MINICAT IA",
     "prefix": ".",
-    "language": "es",
-    "status": "dnd",
-    "activityRotation": 300000
+    "website": "https://minicat-ia-production.up.railway.app/",
+    "commands": {
+      "chat": true,
+      "mention": true,
+      "reply": true
+    }
   },
-  "web": {
-    "name": "MINICAT IA",
-    "port": 3000,
-    "discordLogin": true,
-    "theme": "dark-blue"
-  },
-  "ai": {
-    "provider": "groq",
-    "personality": "professional",
-    "memory": "per-conversation",
-    "saveConversations": true
-  },
-  "limits": {
-    "freeMessages": 100,
-    "webImages": 2,
-    "discordImages": 5,
-    "resetHours": 24,
-    "continueAfterLimit": true,
-    "reducedPrecision": true,
-    "blockAttachmentsAfterLimit": true,
-    "blockFileGenerationAfterLimit": true
+  "memory": {
+    "enabled": true,
+    "userControl": true,
+    "allowAdd": true,
+    "allowEdit": true,
+    "allowDelete": true,
+    "separateFromChats": true
   },
   "privacy": {
-    "storeConversations": true,
-    "storePasswords": false
+    "saveConversations": false,
+    "saveTechnicalErrors": true
   },
-  "images": {
-    "enabled": true,
-    "quality": "ultra"
+  "interface": {
+    "theme": "dark",
+    "accentColor": "#397DCE",
+    "responsive": true
   },
-  "files": {
-    "enabled": true,
-    "websitePublishing": false,
-    "codeGeneration": true
+  "limits": {
+    "textMessagesPerDay": 100,
+    "imageMessagesPerDay": 2
   }
 }
