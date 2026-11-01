@@ -1,0 +1,15 @@
+{
+  "users": {},
+  "conversations": {},
+  "servers": {},
+  "limits": {},
+  "statistics": {},
+  "settings": {
+    "language": "es",
+    "timezone": "America/Bogota",
+    "freeMessages": 100,
+    "webImages": 2,
+    "discordImages": 5,
+    "resetHours": 24
+  }
+}
