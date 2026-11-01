@@ -1,15 +1,12 @@
 {
   "users": {},
-  "conversations": {},
-  "servers": {},
-  "limits": {},
+  "memories": {},
+  "settings": {},
+  "chats": {},
   "statistics": {},
-  "settings": {
-    "language": "es",
-    "timezone": "America/Bogota",
-    "freeMessages": 100,
-    "webImages": 2,
-    "discordImages": 5,
-    "resetHours": 24
+  "usage": {},
+  "privacy": {
+    "memoryEnabledByDefault": true,
+    "saveConversations": false
   }
 }
