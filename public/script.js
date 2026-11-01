@@ -1,34 +1,61 @@
 
-// ======================================
+"use strict";
+
+// ============================================
 // MINICAT IA - SCRIPT PRINCIPAL
-// ======================================
+// ============================================
 
 document.addEventListener("DOMContentLoaded", () => {
-  const $ = selector => document.querySelector(selector);
+
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => document.querySelectorAll(selector);
 
   const API = {
     me: "/api/me",
+    chats: "/api/chats",
     chat: "/api/chat",
-    chats: "/api/chats"
+    memory: "/api/memory",
+    upload: "/api/upload",
+    image: "/api/image"
   };
 
-  const STORAGE_KEY = "minicat_chats";
-  const PREF_KEY = "minicat_preferences";
+  const STORAGE = {
+    preferences: "minicat_preferences",
+    chats: "minicat_chats",
+    memory: "minicat_memory"
+  };
 
   const state = {
-    activeSection: "chat",
-    activeChat: null,
+    user: null,
     chats: [],
+    activeChat: null,
     memory: [],
     memoryEnabled: true,
-    sending: false,
-    sidebarOpen: false,
-    attachments: []
+    attachments: [],
+    busy: false,
+    activeSection: "chat",
+    sidebarOpen: false
   };
 
-  // ======================================
+  // ==========================================
   // UTILIDADES
-  // ======================================
+  // ==========================================
+
+  function createId() {
+    return crypto.randomUUID
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    })[char]);
+  }
 
   async function request(url, options = {}) {
     const response = await fetch(url, {
@@ -45,103 +72,100 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data.error || data.message || "Error del servidor.");
+      throw new Error(data.error || "No se pudo completar la solicitud.");
     }
 
     return data;
   }
 
-  function saveLocalChats() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.chats));
+  function saveLocal() {
+    localStorage.setItem(STORAGE.chats, JSON.stringify(state.chats));
+    localStorage.setItem(STORAGE.memory, JSON.stringify(state.memory));
+
+    localStorage.setItem(STORAGE.preferences, JSON.stringify({
+      memoryEnabled: state.memoryEnabled,
+      activeSection: state.activeSection
+    }));
   }
 
-  function getActiveChat() {
-    return state.chats.find(chat => chat.id === state.activeChat);
-  }
-
-  function createMessageElement(role, content) {
-    const message = document.createElement("div");
-    message.className = `message message-${role}`;
-
-    const text = document.createElement("div");
-    text.className = "message-content";
-    text.textContent = content;
-
-    message.appendChild(text);
-    return message;
-  }
-
-  function showMessage(role, content) {
-    const container = $("#chat-messages");
-    if (!container) return null;
-
-    $(".chat-welcome")?.remove();
-
-    const element = createMessageElement(role, content);
-    container.appendChild(element);
-    container.scrollTop = container.scrollHeight;
-
-    return element;
-  }
-
-  function showError(message) {
-    showMessage("error", message);
-  }
-
-  // ======================================
-  // PREFERENCIAS
-  // ======================================
-
-  function loadPreferences() {
+  function loadLocal() {
     try {
-      const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+      state.chats = JSON.parse(
+        localStorage.getItem(STORAGE.chats) || "[]"
+      );
 
-      state.memoryEnabled = saved.memoryEnabled ?? true;
-      state.memory = Array.isArray(saved.memory) ? saved.memory : [];
+      state.memory = JSON.parse(
+        localStorage.getItem(STORAGE.memory) || "[]"
+      );
+
+      const preferences = JSON.parse(
+        localStorage.getItem(STORAGE.preferences) || "{}"
+      );
+
+      state.memoryEnabled = preferences.memoryEnabled !== false;
+
     } catch {
+      state.chats = [];
       state.memory = [];
     }
   }
 
-  function savePreferences() {
-    localStorage.setItem(PREF_KEY, JSON.stringify({
-      memoryEnabled: state.memoryEnabled,
-      memory: state.memory
-    }));
+  function notify(message) {
+    let element = $("#minicat-notification");
+
+    if (!element) {
+      element = document.createElement("div");
+      element.id = "minicat-notification";
+      element.className = "minicat-notification";
+      document.body.appendChild(element);
+    }
+
+    element.textContent = message;
+    element.classList.add("visible");
+
+    clearTimeout(element._timer);
+
+    element._timer = setTimeout(() => {
+      element.classList.remove("visible");
+    }, 3000);
   }
 
-  // ======================================
+  // ==========================================
   // NAVEGACIÓN
-  // ======================================
+  // ==========================================
 
-  function openSection(section) {
+  function showSection(section) {
+    const validSections = [
+      "chat",
+      "cuenta",
+      "configuracion",
+      "memoria"
+    ];
+
+    if (!validSections.includes(section)) return;
+
     state.activeSection = section;
 
-    document.querySelectorAll(".page-section").forEach(element => {
-      element.hidden = element.id !== section;
-      element.classList.toggle("active", element.id === section);
+    validSections.forEach(name => {
+      const element = $("#" + name);
+
+      if (element) {
+        element.hidden = name !== section;
+        element.classList.toggle("active", name === section);
+      }
     });
 
-    document.querySelectorAll("[data-section]").forEach(element => {
-      element.classList.toggle(
+    $$("[data-section]").forEach(button => {
+      button.classList.toggle(
         "active",
-        element.dataset.section === section
+        button.dataset.section === section
       );
     });
 
     closeSidebar();
-    $("#global-menu")?.setAttribute("hidden", "");
+    closeGlobalMenu();
+    saveLocal();
   }
-
-  document.querySelectorAll("[data-section]").forEach(element => {
-    element.addEventListener("click", () => {
-      openSection(element.dataset.section);
-    });
-  });
-
-  // ======================================
-  // MENÚ LATERAL
-  // ======================================
 
   function openSidebar() {
     state.sidebarOpen = true;
@@ -155,114 +179,136 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#sidebar-overlay")?.classList.remove("visible");
   }
 
-  $("#menu-toggle")?.addEventListener("click", () => {
+  function toggleSidebar() {
     state.sidebarOpen ? closeSidebar() : openSidebar();
-  });
+  }
 
-  $("#sidebar-close")?.addEventListener("click", closeSidebar);
-  $("#sidebar-overlay")?.addEventListener("click", closeSidebar);
+  function openGlobalMenu() {
+    const menu = $("#global-menu");
 
-  // ======================================
-  // MENÚ GLOBAL
-  // ======================================
+    if (!menu) return;
 
-  const globalMenu = $("#global-menu");
-  const globalMenuButton = $("#global-menu-button");
+    menu.hidden = false;
+    menu.classList.add("visible");
+  }
 
-  globalMenuButton?.addEventListener("click", event => {
-    event.stopPropagation();
+  function closeGlobalMenu() {
+    const menu = $("#global-menu");
 
-    if (globalMenu?.hasAttribute("hidden")) {
-      globalMenu.removeAttribute("hidden");
-      globalMenu.classList.add("visible");
-    } else {
-      globalMenu?.setAttribute("hidden", "");
-      globalMenu?.classList.remove("visible");
-    }
-  });
+    if (!menu) return;
 
-  document.addEventListener("click", event => {
-    if (
-      !globalMenu?.contains(event.target) &&
-      !globalMenuButton?.contains(event.target)
-    ) {
-      globalMenu?.setAttribute("hidden", "");
-      globalMenu?.classList.remove("visible");
-    }
-  });
+    menu.hidden = true;
+    menu.classList.remove("visible");
+  }
 
-  // ======================================
+  // ==========================================
   // CHATS
-  // ======================================
+  // ==========================================
 
-  function newChat() {
+  function createChat() {
     const chat = {
-      id: crypto.randomUUID(),
+      id: "web:" + (state.user?.id || "guest") + ":" + createId(),
       title: "Nuevo chat",
       messages: [],
-      createdAt: new Date().toISOString()
+      updatedAt: new Date().toISOString()
     };
 
     state.chats.unshift(chat);
     state.activeChat = chat.id;
 
-    saveLocalChats();
+    saveLocal();
     renderChats();
     renderMessages();
-    openSection("chat");
 
+    showSection("chat");
     $("#message-input")?.focus();
+
+    return chat;
   }
 
-  $("#new-chat-button")?.addEventListener("click", newChat);
-  $("#new-chat-button-top")?.addEventListener("click", newChat);
+  function getActiveChat() {
+    return state.chats.find(chat => chat.id === state.activeChat);
+  }
 
-  function renderChats() {
+  function renderChats(filter = "") {
     const container = $("#active-chats");
     if (!container) return;
 
     container.innerHTML = "";
 
-    if (!state.chats.length) {
-      const empty = document.createElement("p");
-      empty.className = "empty-chats";
-      empty.textContent = "Tus chats aparecerán aquí.";
-      container.appendChild(empty);
-      return;
-    }
+    const filtered = state.chats.filter(chat =>
+      (chat.title || "Nuevo chat")
+        .toLowerCase()
+        .includes(filter.toLowerCase())
+    );
 
-    state.chats.forEach(chat => {
-      const row = document.createElement("div");
-      row.className = "chat-item";
+    filtered.forEach(chat => {
+      const item = document.createElement("div");
 
-      if (chat.id === state.activeChat) {
-        row.classList.add("active");
+      item.className = "chat-history-item";
+      item.classList.toggle("active", chat.id === state.activeChat);
+
+      const title = document.createElement("button");
+      title.className = "chat-history-title";
+      title.textContent = chat.title || "Nuevo chat";
+      title.addEventListener("click", () => openChat(chat.id));
+
+      const menu = document.createElement("button");
+      menu.className = "chat-history-menu";
+      menu.textContent = "⋮";
+      menu.setAttribute("aria-label", "Opciones del chat");
+
+      menu.addEventListener("click", event => {
+        event.stopPropagation();
+        showChatOptions(chat.id);
+      });
+
+      item.append(title, menu);
+      container.appendChild(item);
+    });
+  }
+
+  async function loadChats() {
+    try {
+      const data = await request(API.chats);
+
+      if (Array.isArray(data.chats)) {
+        state.chats = data.chats.map(chat => ({
+          ...chat,
+          messages: chat.messages || []
+        }));
       }
 
-      const select = document.createElement("button");
-      select.className = "chat-select";
-      select.textContent = chat.title || "Nuevo chat";
+      saveLocal();
+    } catch (error) {
+      console.warn("No se pudieron cargar los chats:", error.message);
+    }
 
-      select.addEventListener("click", () => {
-        state.activeChat = chat.id;
-        renderChats();
-        renderMessages();
-        openSection("chat");
-      });
+    renderChats();
+  }
 
-      const menuButton = document.createElement("button");
-      menuButton.className = "chat-menu-button";
-      menuButton.textContent = "⋮";
-      menuButton.setAttribute("aria-label", "Opciones del chat");
+  async function openChat(id) {
+    const chat = state.chats.find(item => item.id === id);
+    if (!chat) return;
 
-      menuButton.addEventListener("click", event => {
-        event.stopPropagation();
-        showChatMenu(chat.id, menuButton);
-      });
+    state.activeChat = id;
+    showSection("chat");
 
-      row.append(select, menuButton);
-      container.appendChild(row);
-    });
+    try {
+      const data = await request(
+        API.chat + "/" + encodeURIComponent(id)
+      );
+
+      if (Array.isArray(data.messages)) {
+        chat.messages = data.messages;
+      }
+    } catch (error) {
+      console.warn("Chat local:", error.message);
+    }
+
+    saveLocal();
+    renderChats();
+    renderMessages();
   }
 
   function renderMessages() {
@@ -274,451 +320,542 @@ document.addEventListener("DOMContentLoaded", () => {
     const chat = getActiveChat();
 
     if (!chat || !chat.messages?.length) {
-      container.innerHTML = `
-        <div class="chat-welcome">
-          <img src="/Screenshot_20261101_141227_Discord.jpg"
-               alt="MINICAT IA">
-          <h1>¿En qué puedo ayudarte?</h1>
-          <p>Soy MINICAT IA. Pregúntame lo que quieras.</p>
-        </div>
-      `;
+      const welcome = document.createElement("div");
+      welcome.className = "chat-welcome";
+      welcome.textContent = "¡Hola! Soy MINICAT IA. ¿En qué puedo ayudarte?";
+      container.appendChild(welcome);
       return;
     }
 
     chat.messages.forEach(message => {
-      showMessage(message.role, message.content);
-    });
-  }
-
-  function showChatMenu(chatId, anchor) {
-    document.querySelector(".chat-context-menu")?.remove();
-
-    const menu = document.createElement("div");
-    menu.className = "chat-context-menu";
-
-    const actions = [
-      ["Renombrar", () => renameChat(chatId)],
-      ["Compartir", () => shareChat(chatId)],
-      ["Archivar", () => archiveChat(chatId)],
-      ["Eliminar", () => deleteChat(chatId)]
-    ];
-
-    actions.forEach(([label, action]) => {
-      const button = document.createElement("button");
-      button.textContent = label;
-
-      button.addEventListener("click", () => {
-        menu.remove();
-        action();
-      });
-
-      menu.appendChild(button);
+      addMessageToDOM(message.role, message.content);
     });
 
-    anchor.parentElement.appendChild(menu);
+    container.scrollTop = container.scrollHeight;
   }
 
-  function renameChat(id) {
+  function addMessageToDOM(role, content) {
+    const container = $("#chat-messages");
+    if (!container) return;
+
+    const message = document.createElement("div");
+
+    message.className = "message " +
+      (role === "assistant" ? "assistant-message" : "user-message");
+
+    const text = document.createElement("div");
+    text.className = "message-content";
+    text.textContent = content || "";
+
+    message.appendChild(text);
+    container.appendChild(message);
+
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function showChatOptions(id) {
     const chat = state.chats.find(item => item.id === id);
     if (!chat) return;
 
-    const name = prompt("Escribe el nuevo nombre:");
+    const action = prompt(
+      "Opciones del chat:\n1. Cambiar nombre\n2. Compartir\n3. Eliminar\n\nEscribe el número:"
+    );
 
-    if (!name?.trim()) return;
+    if (action === "1") {
+      const title = prompt("Nuevo nombre:", chat.title);
 
-    chat.title = name.trim();
-    saveLocalChats();
-    renderChats();
-  }
+      if (title?.trim()) {
+        chat.title = title.trim();
+        saveLocal();
+        renderChats();
+        syncChatUpdate(id, { title: chat.title });
+      }
+    }
 
-  async function shareChat(id) {
-    const chat = state.chats.find(item => item.id === id);
-    if (!chat) return;
+    if (action === "2") {
+      const text = chat.messages.map(message =>
+        (message.role === "user" ? "Tú: " : "MINICAT IA: ") +
+        message.content
+      ).join("\n\n");
 
-    const text = (chat.messages || [])
-      .map(message => `${message.role}: ${message.content}`)
-      .join("\n\n");
-
-    try {
       if (navigator.share) {
-        await navigator.share({
+        navigator.share({
           title: chat.title,
           text
-        });
+        }).catch(() => {});
       } else {
-        await navigator.clipboard.writeText(text);
-        alert("Conversación copiada.");
+        navigator.clipboard.writeText(text)
+          .then(() => notify("Conversación copiada."));
       }
+    }
+
+    if (action === "3") {
+      if (!confirm("¿Quieres eliminar este chat?")) return;
+
+      deleteChat(id);
+    }
+  }
+
+  async function syncChatUpdate(id, changes) {
+    try {
+      await request(API.chat + "/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify(changes)
+      });
     } catch (error) {
-      if (error.name !== "AbortError") {
-        alert("No se pudo compartir la conversación.");
-      }
+      console.warn("No se pudo sincronizar el chat:", error.message);
     }
   }
 
-  function archiveChat(id) {
-    const chat = state.chats.find(item => item.id === id);
-    if (!chat) return;
-
-    chat.archived = true;
-
-    if (state.activeChat === id) {
-      state.activeChat = null;
-    }
-
-    saveLocalChats();
-    renderChats();
-    renderMessages();
-  }
-
-  function deleteChat(id) {
-    if (!confirm("¿Eliminar esta conversación?")) return;
-
+  async function deleteChat(id) {
     state.chats = state.chats.filter(chat => chat.id !== id);
 
     if (state.activeChat === id) {
       state.activeChat = null;
     }
 
-    saveLocalChats();
+    saveLocal();
     renderChats();
     renderMessages();
-  }
 
-  // ======================================
-  // CARGAR CHATS
-  // ======================================
-
-  async function loadChats() {
     try {
-      const data = await request(API.chats);
-
-      const chats = Array.isArray(data)
-        ? data
-        : data.chats;
-
-      if (Array.isArray(chats)) {
-        state.chats = chats.map(chat => ({
-          ...chat,
-          messages: Array.isArray(chat.messages) ? chat.messages : []
-        }));
-      }
+      await request(API.chat + "/" + encodeURIComponent(id), {
+        method: "DELETE"
+      });
     } catch (error) {
-      console.warn("No se pudieron cargar los chats del servidor:", error);
-
-      try {
-        state.chats = JSON.parse(
-          localStorage.getItem(STORAGE_KEY) || "[]"
-        );
-      } catch {
-        state.chats = [];
-      }
+      console.warn("Eliminación remota pendiente:", error.message);
     }
 
-    if (!state.activeChat && state.chats.length) {
-      state.activeChat = state.chats[0].id;
-    }
-
-    renderChats();
-    renderMessages();
+    notify("Chat eliminado.");
   }
 
-  // ======================================
-  // ENVIAR MENSAJES
-  // ======================================
+  // ==========================================
+  // ENVÍO DE MENSAJES
+  // ==========================================
 
-  async function sendMessage(message) {
-    if (state.sending || !message.trim()) return;
+  function setBusy(value) {
+    state.busy = value;
+
+    const button = $("#send-message");
+
+    if (button) {
+      button.disabled = value;
+      button.textContent = value ? "..." : "➤";
+    }
+  }
+
+  async function sendMessage(event) {
+    event?.preventDefault();
+
+    if (state.busy) return;
+
+    const input = $("#message-input");
+    const message = input?.value.trim();
+
+    if (!message && !state.attachments.length) return;
 
     if (!state.activeChat) {
-      newChat();
+      createChat();
     }
 
     const chat = getActiveChat();
     if (!chat) return;
 
-    state.sending = true;
-
-    const input = $("#message-input");
-    const sendButton = $("#send-message");
-
-    if (input) input.disabled = true;
-    if (sendButton) sendButton.disabled = true;
-
-    chat.messages ||= [];
-    chat.messages.push({
-      role: "user",
-      content: message
-    });
-
-    if (chat.title === "Nuevo chat") {
-      chat.title = message.slice(0, 35);
+    if (message.length > 5000) {
+      notify("El mensaje supera los 5000 caracteres.");
+      return;
     }
 
-    saveLocalChats();
-    renderChats();
-    showMessage("user", message);
+    const userMessage = {
+      role: "user",
+      content: message
+    };
 
-    const loading = showMessage("assistant", "MINICAT IA está pensando...");
+    chat.messages.push(userMessage);
+
+    if (chat.title === "Nuevo chat" && message) {
+      chat.title = message.slice(0, 45);
+    }
+
+    chat.updatedAt = new Date().toISOString();
+
+    if (input) input.value = "";
+
+    addMessageToDOM("user", message || "Archivo adjunto");
+
+    const files = [...state.attachments];
+    state.attachments = [];
+    renderAttachmentPreview();
+
+    saveLocal();
+    renderChats();
+    setBusy(true);
 
     try {
+      let uploadedFiles = [];
+
+      if (files.length) {
+        uploadedFiles = await uploadFiles(files);
+      }
+
       const data = await request(API.chat, {
         method: "POST",
         body: JSON.stringify({
           message,
-          conversationId: chat.id
+          conversationId: chat.id,
+          attachments: uploadedFiles
         })
       });
 
-      loading?.remove();
+      const answer = data.reply || data.response || data.message;
 
-      const reply = data.reply || data.response || data.message;
-
-      if (!reply) {
-        throw new Error("El servidor no devolvió una respuesta.");
+      if (!answer) {
+        throw new Error("La IA no devolvió una respuesta.");
       }
 
       chat.messages.push({
         role: "assistant",
-        content: reply
+        content: answer
       });
 
-      showMessage("assistant", reply);
-      saveLocalChats();
-      renderChats();
+      addMessageToDOM("assistant", answer);
+
+      chat.updatedAt = new Date().toISOString();
+      saveLocal();
 
     } catch (error) {
-      loading?.remove();
+      addMessageToDOM(
+        "assistant",
+        "No pude procesar tu mensaje: " + error.message
+      );
 
-      showError("No pude enviar el mensaje: " + error.message);
-
-      // El mensaje del usuario permanece en el historial.
-      saveLocalChats();
-
+      notify(error.message);
     } finally {
-      state.sending = false;
-
-      if (input) {
-        input.disabled = false;
-        input.value = "";
-        input.focus();
-      }
-
-      if (sendButton) sendButton.disabled = false;
+      setBusy(false);
+      input?.focus();
     }
   }
 
-  $("#chat-form")?.addEventListener("submit", event => {
-    event.preventDefault();
+  // ==========================================
+  // ARCHIVOS Y ADJUNTOS
+  // ==========================================
 
-    const input = $("#message-input");
-    const message = input?.value.trim();
+  function setupAttachments() {
+    const form = $("#chat-form");
+    if (!form) return;
 
-    if (!message || state.sending) return;
+    let button = $("#attachment-button");
+    let input = $("#attachment-input");
 
-    sendMessage(message);
-  });
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "attachment-button";
+      button.type = "button";
+      button.className = "attachment-button";
+      button.textContent = "＋";
+      button.title = "Adjuntar archivo";
 
-  // ======================================
-  // ARCHIVOS E IMÁGENES - INTERFAZ
-  // ======================================
+      form.appendChild(button);
+    }
 
-  const composer = $(".composer");
+    if (!input) {
+      input = document.createElement("input");
+      input.id = "attachment-input";
+      input.type = "file";
+      input.accept = "image/*,.pdf,.txt,.doc,.docx";
+      input.multiple = true;
+      input.hidden = true;
 
-  if (composer && !$("#attachment-button")) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.id = "attachment-button";
-    button.className = "attachment-button";
-    button.textContent = "＋";
-    button.title = "Adjuntar archivos";
+      form.appendChild(input);
+    }
 
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.id = "attachment-input";
-    fileInput.accept = "image/*,.pdf,.txt,.doc,.docx";
-    fileInput.multiple = true;
-    fileInput.hidden = true;
+    button.addEventListener("click", () => input.click());
 
-    const preview = document.createElement("div");
-    preview.id = "attachment-preview";
-    preview.className = "attachment-preview";
+    input.addEventListener("change", () => {
+      const selected = Array.from(input.files || []);
 
-    button.addEventListener("click", () => fileInput.click());
+      for (const file of selected) {
+        if (file.size > 10 * 1024 * 1024) {
+          notify(file.name + " supera los 10 MB.");
+          continue;
+        }
 
-    fileInput.addEventListener("change", () => {
-      state.attachments = Array.from(fileInput.files || []);
+        if (state.attachments.length >= 5) {
+          notify("Máximo 5 archivos por mensaje.");
+          break;
+        }
 
-      preview.innerHTML = "";
+        state.attachments.push(file);
+      }
 
-      state.attachments.forEach(file => {
-        const item = document.createElement("span");
-        item.textContent = `📎 ${file.name}`;
-        preview.appendChild(item);
-      });
+      input.value = "";
+      renderAttachmentPreview();
     });
-
-    composer.prepend(button, fileInput);
-    composer.appendChild(preview);
   }
 
-  // ======================================
+  function renderAttachmentPreview() {
+    let preview = $("#attachment-preview");
+
+    if (!preview) {
+      preview = document.createElement("div");
+      preview.id = "attachment-preview";
+      preview.className = "attachment-preview";
+
+      $("#chat-form")?.appendChild(preview);
+    }
+
+    preview.innerHTML = "";
+
+    state.attachments.forEach((file, index) => {
+      const item = document.createElement("div");
+      item.className = "attachment-item";
+
+      const name = document.createElement("span");
+      name.textContent = file.name;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", "Quitar archivo");
+
+      remove.addEventListener("click", () => {
+        state.attachments.splice(index, 1);
+        renderAttachmentPreview();
+      });
+
+      item.append(name, remove);
+      preview.appendChild(item);
+    });
+  }
+
+  async function uploadFiles(files) {
+    const uploaded = [];
+
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(API.upload, {
+        method: "POST",
+        credentials: "same-origin",
+        body: formData
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "No se pudo subir " + file.name);
+      }
+
+      uploaded.push(data.file);
+    }
+
+    return uploaded;
+  }
+
+  // ==========================================
+  // GENERACIÓN DE IMÁGENES
+  // ==========================================
+
+  async function generateImage(prompt) {
+    if (!prompt.trim()) return;
+
+    if (!state.activeChat) createChat();
+
+    const chat = getActiveChat();
+
+    chat.messages.push({
+      role: "user",
+      content: "Generar imagen: " + prompt
+    });
+
+    addMessageToDOM("user", "Generar imagen: " + prompt);
+    setBusy(true);
+
+    try {
+      const data = await request(API.image, {
+        method: "POST",
+        body: JSON.stringify({ prompt })
+      });
+
+      if (!data.image) {
+        throw new Error("No se recibió la imagen.");
+      }
+
+      const container = $("#chat-messages");
+      const wrapper = document.createElement("div");
+      wrapper.className = "message assistant-message";
+
+      const image = document.createElement("img");
+      image.src = data.image;
+      image.alt = "Imagen generada por MINICAT IA";
+      image.className = "generated-image";
+      image.loading = "lazy";
+
+      wrapper.appendChild(image);
+      container?.appendChild(wrapper);
+
+      chat.messages.push({
+        role: "assistant",
+        content: "[Imagen generada]"
+      });
+
+      saveLocal();
+
+    } catch (error) {
+      notify(error.message);
+      addMessageToDOM("assistant", error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ==========================================
   // MEMORIA PERSONAL
-  // ======================================
+  // ==========================================
+
+  async function loadMemory() {
+    try {
+      const data = await request(API.memory);
+
+      if (Array.isArray(data.memory)) {
+        state.memory = data.memory;
+      }
+
+      if (typeof data.enabled === "boolean") {
+        state.memoryEnabled = data.enabled;
+      }
+    } catch (error) {
+      console.warn("Memoria local:", error.message);
+    }
+
+    renderMemory();
+  }
 
   function renderMemory() {
     const container = $("#memory-list");
+    const toggle = $("#memory-toggle");
+
+    if (toggle) {
+      toggle.checked = state.memoryEnabled;
+    }
+
     if (!container) return;
 
     container.innerHTML = "";
 
     if (!state.memory.length) {
-      const empty = document.createElement("p");
-      empty.textContent = "No hay información guardada.";
-      container.appendChild(empty);
+      container.textContent = "Todavía no tienes recuerdos guardados.";
       return;
     }
 
-    state.memory.forEach((memory, index) => {
-      const item = document.createElement("div");
-      item.className = "memory-item";
+    state.memory.forEach((item, index) => {
+      const element = document.createElement("div");
+      element.className = "memory-item";
 
       const text = document.createElement("span");
-      text.textContent = memory;
+      text.textContent = typeof item === "string"
+        ? item
+        : item.content || "";
 
       const remove = document.createElement("button");
-      remove.textContent = "Eliminar";
+      remove.type = "button";
+      remove.textContent = "×";
 
       remove.addEventListener("click", () => {
         state.memory.splice(index, 1);
-        savePreferences();
-        renderMemory();
+        saveMemory();
       });
 
-      item.append(text, remove);
-      container.appendChild(item);
+      element.append(text, remove);
+      container.appendChild(element);
     });
   }
 
-  $("#memory-toggle")?.addEventListener("change", event => {
-    state.memoryEnabled = event.target.checked;
-    savePreferences();
-  });
+  async function saveMemory() {
+    saveLocal();
+    renderMemory();
 
-  $("#add-memory-button")?.addEventListener("click", () => {
+    try {
+      await request(API.memory, {
+        method: "PUT",
+        body: JSON.stringify({
+          memory: state.memory,
+          enabled: state.memoryEnabled
+        })
+      });
+    } catch (error) {
+      console.warn("Memoria pendiente de sincronizar:", error.message);
+    }
+  }
+
+  async function addMemory() {
     const input = $("#memory-input");
     const value = input?.value.trim();
 
-    if (!value) return;
+    if (!value) {
+      notify("Escribe algo para guardar.");
+      return;
+    }
 
-    state.memory.push(value);
-    input.value = "";
+    state.memory.push({
+      id: createId(),
+      content: value,
+      createdAt: new Date().toISOString()
+    });
 
-    savePreferences();
-    renderMemory();
-  });
+    if (input) input.value = "";
 
-  $("#clear-memory-button")?.addEventListener("click", () => {
-    if (!confirm("¿Borrar todos los recuerdos?")) return;
+    await saveMemory();
+    notify("Recuerdo guardado.");
+  }
+
+  async function toggleMemory(enabled) {
+    state.memoryEnabled = enabled;
+    await saveMemory();
+
+    notify(enabled
+      ? "Memoria activada."
+      : "Memoria desactivada."
+    );
+  }
+
+  async function clearMemory() {
+    if (!confirm("¿Eliminar todos tus recuerdos?")) return;
 
     state.memory = [];
-    savePreferences();
-    renderMemory();
-  });
+    await saveMemory();
 
-  // ======================================
-  // CUENTA DISCORD
-  // ======================================
+    try {
+      await request(API.memory, {
+        method: "DELETE"
+      });
+    } catch (error) {
+      console.warn(error.message);
+    }
+
+    notify("Memoria eliminada.");
+  }
+
+  // ==========================================
+  // CUENTA
+  // ==========================================
 
   async function loadAccount() {
     try {
       const data = await request(API.me);
-      const user = data.user || data;
 
-      const name = user.global_name || user.username || "Usuario";
-      const avatar = user.avatar
-        ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
-        : "/Screenshot_20261101_141227_Discord.jpg";
+      if (!data.authenticated || !data.user) return;
 
-      if ($("#account-name")) {
-        $("#account-name").textContent = name;
+      state.user = data.user;
+
+      const name = $("#account-name");
+      const id = $("#account-id");
+      const avatar = $("#account-avatar");
+
+      if (name) {
+        name.textContent =
+          data.user.globalName || data.user.username;
       }
 
-      if ($("#account-id")) {
-        $("#account-id").textContent = user.id || "Discord";
-      }
-
-      if ($("#account-avatar")) {
-        $("#account-avatar").src = avatar;
-      }
-
-    } catch (error) {
-      console.warn("No se pudo cargar la cuenta:", error);
-    }
-  }
-
-  // ======================================
-  // CONFIGURACIÓN
-  // ======================================
-
-  $("#theme-selector")?.addEventListener("change", event => {
-    const theme = event.target.value;
-
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("minicat_theme", theme);
-  });
-
-  $("#notifications-toggle")?.addEventListener("change", event => {
-    localStorage.setItem(
-      "minicat_notifications",
-      String(event.target.checked)
-    );
-  });
-
-  function loadSettings() {
-    const theme = localStorage.getItem("minicat_theme");
-
-    if (theme) {
-      document.documentElement.dataset.theme = theme;
-
-      if ($("#theme-selector")) {
-        $("#theme-selector").value = theme;
-      }
-    }
-
-    const notifications = localStorage.getItem("minicat_notifications");
-
-    if (notifications !== null && $("#notifications-toggle")) {
-      $("#notifications-toggle").checked = notifications === "true";
-    }
-
-    if ($("#memory-toggle")) {
-      $("#memory-toggle").checked = state.memoryEnabled;
-    }
-  }
-
-  // ======================================
-  // BUSCAR CHATS
-  // ======================================
-
-  $("#search-chats")?.addEventListener("input", event => {
-    const query = event.target.value.toLowerCase();
-
-    document.querySelectorAll(".chat-item").forEach(item => {
-      item.hidden = !item.textContent.toLowerCase().includes(query);
-    });
-  });
-
-  // ======================================
-  // INICIALIZACIÓN
-  // ======================================
-
-  loadPreferences();
-  loadSettings();
-  renderMemory();
-  loadAccount();
-  loadChats();
-
-  console.log("MINICAT IA: interfaz inicializada correctamente.");
-});
-        
+      if (id) id.textCon
