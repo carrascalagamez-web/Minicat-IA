@@ -5,10 +5,16 @@ const express = require("express");
 const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
+const Groq = require("groq-sdk");
+
 const {
   Client,
   GatewayIntentBits,
-  ActivityType
+  ActivityType,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  Events
 } = require("discord.js");
 
 const app = express();
@@ -18,9 +24,11 @@ const DATA_PATH = path.resolve(
   process.env.DATA_PATH || "./data/database.json"
 );
 
-app.set("trust proxy", 1);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 
 // ==============================
 // ALMACENAMIENTO
@@ -54,12 +62,7 @@ if (!fs.existsSync(DATA_PATH)) {
 }
 
 function readDatabase() {
-  try {
-    return JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
-  } catch (error) {
-    console.error("Error leyendo la base de datos:", error);
-    throw error;
-  }
+  return JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
 }
 
 function saveDatabase(database) {
@@ -74,11 +77,15 @@ function saveDatabase(database) {
 }
 
 // ==============================
-// SESIONES
+// CONFIGURACIÓN WEB
 // ==============================
 
+app.set("trust proxy", 1);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 if (!process.env.SESSION_SECRET) {
-  console.error("Falta SESSION_SECRET en el archivo .env");
+  console.error("Falta SESSION_SECRET en Railway.");
   process.exit(1);
 }
 
@@ -107,13 +114,13 @@ app.get("/auth/discord", (req, res) => {
 
   if (!DISCORD_CLIENT_ID || !DISCORD_REDIRECT_URI) {
     return res.status(500).send(
-      "El inicio de sesión de Discord no está configurado."
+      "El inicio de sesión no está configurado."
     );
   }
 
-  const state = require("crypto")
-    .randomBytes(24)
-    .toString("hex");
+  const crypto = require("crypto");
+
+  const state = crypto.randomBytes(24).toString("hex");
 
   req.session.oauthState = state;
 
@@ -182,7 +189,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     const user = await userResponse.json();
 
     if (!userResponse.ok || !user.id) {
-      throw new Error("No se pudo obtener el usuario de Discord.");
+      throw new Error("No se pudo obtener el usuario.");
     }
 
     const database = readDatabase();
@@ -204,7 +211,7 @@ app.get("/auth/discord/callback", async (req, res) => {
       avatar: user.avatar
     };
 
-    req.session.save((error) => {
+    req.session.save(error => {
       if (error) {
         console.error("Error guardando sesión:", error);
         return res.status(500).send("Error iniciando sesión.");
@@ -247,24 +254,89 @@ app.post("/auth/logout", (req, res) => {
   });
 });
 
-// ==============================
-// CHAT
-// ==============================
-
 app.get("/chat", requireLogin, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // ==============================
-// ARCHIVOS WEB
+// INTELIGENCIA ARTIFICIAL
 // ==============================
 
-app.use(express.static(
-  path.join(__dirname, "public")
-));
+async function askMinicat(userId, conversationId, question) {
+  if (!groq) {
+    throw new Error("GROQ_API_KEY_NOT_CONFIGURED");
+  }
+
+  const database = readDatabase();
+
+  if (!database.conversations) {
+    database.conversations = {};
+  }
+
+  if (!database.conversations[conversationId]) {
+    database.conversations[conversationId] = {
+      userId,
+      messages: []
+    };
+  }
+
+  const conversation = database.conversations[conversationId];
+
+  conversation.messages.push({
+    role: "user",
+    content: question
+  });
+
+  // Mantener los últimos mensajes de esta conversación.
+  conversation.messages = conversation.messages.slice(-12);
+
+  const messages = [
+    {
+      role: "system",
+      content:
+        "Eres MINICAT IA, un asistente inteligente, útil y profesional. " +
+        "Responde en español colombiano de forma clara y natural. " +
+        "Ayuda con preguntas, programación, tecnología, explicaciones " +
+        "y tareas creativas. No reveles detalles internos de tus proveedores."
+    },
+    ...conversation.messages
+  ];
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: MODEL,
+      messages,
+      max_completion_tokens: 1000
+    });
+
+    const answer =
+      completion.choices?.[0]?.message?.content?.trim();
+
+    if (!answer) {
+      throw new Error("La IA devolvió una respuesta vacía.");
+    }
+
+    conversation.messages.push({
+      role: "assistant",
+      content: answer
+    });
+
+    conversation.messages = conversation.messages.slice(-12);
+
+    saveDatabase(database);
+
+    return answer;
+
+  } catch (error) {
+    // Eliminar el mensaje que quedó sin respuesta.
+    conversation.messages.pop();
+    saveDatabase(database);
+    throw error;
+  }
+}
 
 // ==============================
-// BOT DE DISCORD
+// COMANDOS DE DISCORD
 // ==============================
 
 const client = new Client({
@@ -275,8 +347,70 @@ const client = new Client({
   ]
 });
 
-client.once("ready", () => {
-  console.log(`MINICAT IA conectado como ${client.user.tag}`);
+async function sendLongMessage(target, content) {
+  const chunks = content.match(/[\s\S]{1,1900}/g) || [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (i === 0) {
+      await target.reply(chunks[i]);
+    } else {
+      await target.channel.send(chunks[i]);
+    }
+  }
+}
+
+// ==============================
+// COMANDOS SLASH
+// ==============================
+
+const slashCommands = [
+  new SlashCommandBuilder()
+    .setName("chat")
+    .setDescription("Habla con MINICAT IA")
+    .addStringOption(option =>
+      option
+        .setName("mensaje")
+        .setDescription("Escribe tu pregunta")
+        .setRequired(true)
+        .setMaxLength(1500)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Comprueba si MINICAT está conectado"),
+
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Muestra los comandos de MINICAT IA")
+].map(command => command.toJSON());
+
+async function registerSlashCommands() {
+  try {
+    const rest = new REST({ version: "10" })
+      .setToken(process.env.DISCORD_TOKEN);
+
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: slashCommands }
+    );
+
+    console.log("Comandos slash registrados correctamente.");
+
+  } catch (error) {
+    console.error("Error registrando comandos slash:", error);
+  }
+}
+
+// ==============================
+// EVENTO DE INICIO
+// ==============================
+
+client.once(Events.ClientReady, async readyClient => {
+  console.log(
+    `MINICAT IA conectado como ${readyClient.user.tag}`
+  );
+
+  await registerSlashCommands();
 
   const activities = [
     "Ayudando a la comunidad",
@@ -286,45 +420,163 @@ client.once("ready", () => {
 
   let index = 0;
 
-  client.user.setStatus("dnd");
+  readyClient.user.setStatus("dnd");
 
-  client.user.setActivity(activities[index], {
+  readyClient.user.setActivity(activities[index], {
     type: ActivityType.Playing
   });
 
   setInterval(() => {
     index = (index + 1) % activities.length;
 
-    client.user.setActivity(activities[index], {
+    readyClient.user.setActivity(activities[index], {
       type: ActivityType.Playing
     });
   }, 300000);
 });
 
-client.on("error", (error) => {
+// ==============================
+// MENSAJES CON PREFIJO
+// ==============================
+
+client.on(Events.MessageCreate, async message => {
+  if (message.author.bot || !message.guild) return;
+
+  const content = message.content.trim();
+
+  if (content.startsWith(".ping")) {
+    return message.reply("¡Pong! 🐱 MINICAT IA está conectado.");
+  }
+
+  if (content === ".help") {
+    return message.reply(
+      "**🐱 MINICAT IA — Comandos**\n\n" +
+      "`.chat pregunta` — Conversar con MINICAT.\n" +
+      "`.ping` — Comprobar conexión.\n" +
+      "`.help` — Ver comandos.\n\n" +
+      "**También puedes usar los comandos `/`.**"
+    );
+  }
+
+  if (!content.startsWith(".chat ")) return;
+
+  const question = content.slice(6).trim();
+
+  if (!question) {
+    return message.reply("Escribe una pregunta después de `.chat`.");
+  }
+
+  await message.channel.sendTyping();
+
+  try {
+    const conversationId =
+      `discord:${message.guild.id}:${message.channel.id}:${message.author.id}`;
+
+    const answer = await askMinicat(
+      message.author.id,
+      conversationId,
+      question
+    );
+
+    await sendLongMessage(message, answer);
+
+  } catch (error) {
+    console.error("Error en .chat:", error);
+
+    await message.reply(
+      "No pude responder en este momento. Inténtalo nuevamente."
+    );
+  }
+});
+
+// ==============================
+// INTERACCIONES SLASH
+// ==============================
+
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "ping") {
+    return interaction.reply(
+      "¡Pong! 🐱 MINICAT IA está conectado."
+    );
+  }
+
+  if (interaction.commandName === "help") {
+    return interaction.reply(
+      "**🐱 MINICAT IA — Comandos**\n\n" +
+      "`/chat` — Conversar con MINICAT.\n" +
+      "`/ping` — Comprobar conexión.\n" +
+      "`/help` — Ver comandos.\n\n" +
+      "También puedes utilizar el prefijo `.`."
+    );
+  }
+
+  if (interaction.commandName === "chat") {
+    const question = interaction.options.getString("mensaje");
+
+    await interaction.deferReply();
+
+    try {
+      const conversationId =
+        `discord:${interaction.guildId}:${interaction.channelId}:${interaction.user.id}`;
+
+      const answer = await askMinicat(
+        interaction.user.id,
+        conversationId,
+        question
+      );
+
+      const chunks = answer.match(/[\s\S]{1,1900}/g) || [];
+
+      await interaction.editReply(chunks[0] || "No recibí respuesta.");
+
+      for (const chunk of chunks.slice(1)) {
+        await interaction.followUp(chunk);
+      }
+
+    } catch (error) {
+      console.error("Error en /chat:", error);
+
+      await interaction.editReply(
+        "No pude responder en este momento. Inténtalo nuevamente."
+      );
+    }
+  }
+});
+
+// ==============================
+// ERRORES DEL BOT
+// ==============================
+
+client.on("error", error => {
   console.error("Error del bot:", error);
 });
 
-if (process.env.DISCORD_TOKEN) {
-  client.login(process.env.DISCORD_TOKEN)
-    .catch(error => {
-      console.error("No se pudo conectar el bot:", error);
-    });
-} else {
-  console.warn("DISCORD_TOKEN no configurado. Bot desconectado.");
-}
+process.on("unhandledRejection", error => {
+  console.error("Error no controlado:", error);
+});
 
 // ==============================
-// RUTAS DE ESTADO
+// ESTADO
 // ==============================
 
 app.get("/api/status", (req, res) => {
   res.json({
     name: "MINICAT IA",
     status: "online",
-    discord: client.isReady() ? "connected" : "disconnected"
+    discord: client.isReady() ? "connected" : "disconnected",
+    ai: groq ? "configured" : "not_configured"
   });
 });
+
+// ==============================
+// ARCHIVOS WEB Y 404
+// ==============================
+
+app.use(express.static(
+  path.join(__dirname, "public")
+));
 
 app.use((req, res) => {
   res.status(404).send("Página no encontrada.");
@@ -340,3 +592,12 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`Puerto: ${PORT}`);
   console.log("--------------------------------");
 });
+
+if (process.env.DISCORD_TOKEN) {
+  client.login(process.env.DISCORD_TOKEN).catch(error => {
+    console.error("No se pudo conectar el bot:", error);
+  });
+} else {
+  console.warn("DISCORD_TOKEN no configurado.");
+  }
+  
