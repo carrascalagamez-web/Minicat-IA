@@ -1,29 +1,383 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#071426">
-    <title>MINICAT IA</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080F1C">
+
+  <title>MINICAT IA</title>
+
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
+
 <body>
 
-    <main class="login-container">
-        <div class="logo">🐱</div>
+<div class="app">
 
-        <h1>MINICAT IA</h1>
-        <p>Tu asistente inteligente.</p>
+  <!-- =================================
+       MENÚ LATERAL
+  ================================== -->
 
-        <button id="discordLogin">
-            <span>Continuar con Discord</span>
+  <aside id="sidebar">
+
+    <div class="brand">
+      <div class="brand-icon">🐱</div>
+      <span>MINICAT IA</span>
+    </div>
+
+    <button id="new-chat-button" class="primary-button">
+      ＋ Nuevo chat
+    </button>
+
+    <input
+      id="search-chats"
+      type="search"
+      placeholder="Buscar chats..."
+      style="margin-top:14px;width:100%;"
+    >
+
+    <div class="sidebar-heading">CHATS ACTIVOS</div>
+
+    <div id="active-chats"></div>
+
+    <div class="sidebar-bottom">
+
+      <div class="sidebar-heading">CHAT</div>
+
+      <button class="sidebar-link active" data-section="chat">
+        <span>◉</span>
+        <span>Chat</span>
+      </button>
+
+      <div class="sidebar-heading">CUENTA</div>
+
+      <button class="sidebar-link" data-section="account">
+        <span>♙</span>
+        <span>Mi cuenta</span>
+      </button>
+
+      <button class="sidebar-link" data-section="settings">
+        <span>⚙</span>
+        <span>Configuración</span>
+      </button>
+
+      <button class="sidebar-link" data-section="memory">
+        <span>✧</span>
+        <span>Memoria</span>
+      </button>
+
+    </div>
+
+  </aside>
+
+  <div id="sidebar-overlay"></div>
+
+  <!-- =================================
+       CONTENIDO PRINCIPAL
+  ================================== -->
+
+  <main class="main-content">
+
+    <!-- BARRA SUPERIOR -->
+
+    <header class="topbar">
+
+      <button id="menu-toggle" class="icon-button">
+        ☰
+      </button>
+
+      <div class="topbar-spacer"></div>
+
+      <div class="topbar-actions">
+
+        <button id="new-chat-button-top" class="icon-button"
+          aria-label="Nuevo chat">
+          ✎
         </button>
 
-        <footer>
-            MINICAT IA © 2026
-        </footer>
-    </main>
+        <button id="global-menu-button" class="icon-button"
+          aria-label="Opciones generales">
+          ⋯
+        </button>
 
-    <script src="script.js"></script>
+      </div>
+
+      <div id="global-menu">
+        <button data-section="settings">⚙ Configuración</button>
+        <button data-section="memory">✧ Memoria</button>
+        <button data-section="account">♙ Mi cuenta</button>
+      </div>
+
+    </header>
+
+    <!-- =================================
+         CHAT
+    ================================== -->
+
+    <section id="chat" class="page-section">
+
+      <div class="chat-area">
+
+        <div class="chat-welcome">
+
+          <div class="chat-logo">🐱</div>
+
+          <h1>¿En qué puedo ayudarte?</h1>
+
+          <p>Estoy aquí para ayudarte con lo que necesites.</p>
+
+        </div>
+
+        <div class="composer">
+
+          <textarea
+            id="chat-input"
+            placeholder="Pregunta lo que quieras..."
+            rows="2"
+          ></textarea>
+
+          <div class="composer-actions">
+
+            <div>
+              <button class="icon-button" aria-label="Adjuntar">＋</button>
+              <button class="icon-button" aria-label="Imágenes">▧</button>
+              <button class="icon-button" aria-label="Voz">♩</button>
+            </div>
+
+            <button class="primary-button" id="send-message">
+              ↑
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- =================================
+         CUENTA
+    ================================== -->
+
+    <section id="account" class="page-section" hidden>
+
+      <h1>Mi cuenta</h1>
+
+      <div class="account-card">
+
+        <div class="chat-logo">♙</div>
+
+        <h2>Mi perfil</h2>
+
+        <p class="settings-description">
+          Tu cuenta vinculada con Discord.
+        </p>
+
+        <div class="settings-row">
+          <span>Usuario</span>
+          <strong id="account-username">Cargando...</strong>
+        </div>
+
+        <div class="settings-row">
+          <span>Discord</span>
+          <strong id="account-discord">Conectado</strong>
+        </div>
+
+        <div class="settings-row">
+          <span>Plan</span>
+          <strong id="account-plan">Gratis</strong>
+        </div>
+
+        <div class="settings-row">
+          <span>Correo</span>
+          <strong id="account-email">No disponible</strong>
+        </div>
+
+      </div>
+
+      <div class="account-card">
+
+        <h3>Administrar cuenta</h3>
+
+        <button class="secondary-button" id="edit-profile">
+          Editar perfil
+        </button>
+
+        <button class="secondary-button" id="logout">
+          Cerrar sesión
+        </button>
+
+      </div>
+
+    </section>
+
+    <!-- =================================
+         CONFIGURACIÓN
+    ================================== -->
+
+    <section id="settings" class="page-section" hidden>
+
+      <h1>Configuración</h1>
+
+      <p class="settings-description">
+        Personaliza tu experiencia en MINICAT IA.
+      </p>
+
+      <div class="settings-card">
+
+        <h3>Apariencia</h3>
+
+        <div class="settings-row">
+
+          <div>
+            <strong>Tema</strong>
+            <p class="settings-description">
+              Selecciona el aspecto de la página.
+            </p>
+          </div>
+
+          <select id="theme-selector">
+            <option value="dark">Oscuro</option>
+            <option value="light">Claro</option>
+            <option value="system">Automático</option>
+          </select>
+
+        </div>
+
+      </div>
+
+      <div class="settings-card">
+
+        <h3>Preferencias</h3>
+
+        <div class="settings-row">
+          <div>
+            <strong>Notificaciones</strong>
+            <p class="settings-description">
+              Recibir avisos de MINICAT IA.
+            </p>
+          </div>
+
+          <input type="checkbox" id="notifications-toggle" checked>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <strong>Memoria personal</strong>
+            <p class="settings-description">
+              Permitir que MINICAT recuerde tus preferencias.
+            </p>
+          </div>
+
+          <input type="checkbox" id="memory-toggle" checked>
+        </div>
+
+      </div>
+
+      <div class="settings-card">
+
+        <h3>Privacidad</h3>
+
+        <p class="settings-description">
+          Gestiona tus recuerdos y preferencias personales.
+        </p>
+
+        <button class="secondary-button" data-section="memory">
+          Administrar memoria
+        </button>
+
+      </div>
+
+    </section>
+
+    <!-- =================================
+         MEMORIA
+    ================================== -->
+
+    <section id="memory" class="page-section" hidden>
+
+      <h1>Memoria personal</h1>
+
+      <p class="settings-description">
+        Administra la información que MINICAT IA puede recordar.
+      </p>
+
+      <div class="memory-card">
+
+        <div class="settings-row">
+
+          <div>
+            <strong>Memoria activada</strong>
+
+            <p class="settings-description">
+              Tú controlas los recuerdos.
+            </p>
+          </div>
+
+          <input type="checkbox" id="memory-toggle">
+        </div>
+
+      </div>
+
+      <div class="memory-card">
+
+        <h3>Recuerdos guardados</h3>
+
+        <div id="memory-list"></div>
+
+      </div>
+
+      <div class="memory-card">
+
+        <h3>Añadir recuerdo</h3>
+
+        <input
+          type="text"
+          id="memory-input"
+          placeholder="Escribe algo para recordar..."
+          style="width:100%;"
+        >
+
+        <button
+          class="primary-button"
+          id="add-memory-button"
+          style="margin-top:12px;"
+        >
+          ＋ Añadir recuerdo
+        </button>
+
+        <button
+          class="secondary-button"
+          id="clear-memory-button"
+          style="margin-top:12px;"
+        >
+          Eliminar toda la memoria
+        </button>
+
+      </div>
+
+      <div class="memory-card">
+
+        <h3>Tu privacidad</h3>
+
+        <p class="settings-description">
+          La memoria personal es independiente del historial
+          de conversaciones. Puedes gestionar tus recuerdos
+          cuando quieras.
+        </p>
+
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
+
+<script src="/script.js"></script>
+
 </body>
-</html>
+    </html>
