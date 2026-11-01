@@ -1,75 +1,537 @@
+/* ==================================
+   MINICAT IA - DISEÑO PRINCIPAL
+================================== */
+
+:root {
+  --bg: #080F1C;
+  --sidebar: #0B1424;
+  --panel: #101C2E;
+  --card: #14243A;
+  --primary: #2563EB;
+  --accent: #60A5FA;
+  --text: #F1F5F9;
+  --muted: #91A3BA;
+  --border: #24364D;
+  --danger: #EF4444;
+}
+
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #061426;
-    font-family: Arial, sans-serif;
-    color: white;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, Arial, sans-serif;
+  min-height: 100vh;
 }
 
-.login-container {
-    width: 90%;
-    max-width: 420px;
-    padding: 45px 30px;
-    text-align: center;
-    background: #0B1D33;
-    border: 1px solid #193B60;
-    border-radius: 22px;
-    box-shadow: 0 0 40px #071f3b;
-}
-
-.logo {
-    font-size: 65px;
-    margin-bottom: 15px;
-}
-
-h1 {
-    font-size: 32px;
-    letter-spacing: 2px;
-}
-
-p {
-    color: #9BB6D2;
-    margin: 12px 0 30px;
+button, input, textarea, select {
+  font: inherit;
 }
 
 button {
-    width: 100%;
-    padding: 16px;
-    border: none;
-    border-radius: 12px;
-    background: #5865F2;
-    color: white;
-    font-size: 16px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: 0.3s;
-    animation: glow 2s infinite alternate;
+  cursor: pointer;
+  color: var(--text);
+  border: none;
 }
 
-button:hover {
-    background: #7180ff;
-    transform: translateY(-2px);
+/* ==================================
+   ESTRUCTURA
+================================== */
+
+.app {
+  display: flex;
+  min-height: 100vh;
+  overflow: hidden;
 }
 
-@keyframes glow {
-    from {
-        box-shadow: 0 0 5px #5865F2;
-    }
-    to {
-        box-shadow: 0 0 20px #5865F2;
-    }
+#sidebar {
+  width: 270px;
+  min-width: 270px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+  transition: transform .25s ease;
+  z-index: 20;
 }
 
-footer {
-    margin-top: 35px;
-    color: #617C99;
-    font-size: 12px;
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==================================
+   MARCA
+================================== */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px;
+  margin-bottom: 22px;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: .3px;
+}
+
+.brand-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: #19365A;
+  color: #9BCBFF;
+  border-radius: 12px;
+}
+
+/* ==================================
+   BOTONES
+================================== */
+
+.primary-button {
+  background: var(--primary);
+  border-radius: 12px;
+  padding: 12px;
+  transition: .2s;
+}
+
+.primary-button:hover {
+  background: #3479F6;
+  transform: translateY(-1px);
+}
+
+.secondary-button {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 13px;
+}
+
+.icon-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text);
+  border-radius: 10px;
+}
+
+.icon-button:hover {
+  background: var(--card);
+}
+
+/* ==================================
+   BARRA SUPERIOR
+================================== */
+
+.topbar {
+  height: 65px;
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ==================================
+   MENÚ GENERAL
+================================== */
+
+#global-menu {
+  position: absolute;
+  top: 57px;
+  right: 16px;
+  width: 220px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 7px;
+  display: none;
+  z-index: 50;
+  box-shadow: 0 12px 35px #0008;
+}
+
+#global-menu.visible {
+  display: block;
+}
+
+#global-menu button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+#global-menu button:hover {
+  background: var(--card);
+}
+
+/* ==================================
+   SIDEBAR
+================================== */
+
+.sidebar-heading {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 16px 9px 8px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px;
+  color: var(--muted);
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebar-link:hover,
+.sidebar-link.active {
+  color: var(--text);
+  background: var(--card);
+}
+
+.sidebar-bottom {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+#active-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 9px;
+  position: relative;
+}
+
+.chat-item:hover {
+  background: var(--card);
+}
+
+.chat-select {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 11px;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+
+.chat-menu-button {
+  background: transparent;
+  padding: 7px;
+  border-radius: 8px;
+}
+
+.chat-context-menu {
+  position: absolute;
+  top: 38px;
+  right: 5px;
+  width: 155px;
+  background: #192A40;
+  border: 1px solid var(--border);
+  padding: 6px;
+  border-radius: 10px;
+  z-index: 30;
+  box-shadow: 0 10px 25px #0009;
+}
+
+.chat-context-menu button {
+  width: 100%;
+  padding: 9px;
+  text-align: left;
+  background: transparent;
+  border-radius: 7px;
+}
+
+.chat-context-menu button:hover {
+  background: var(--card);
+}
+
+/* ==================================
+   CHAT
+================================== */
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 950px;
+  margin: 0 auto;
+  padding: 25px;
+}
+
+.chat-welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 15px;
+  text-align: center;
+}
+
+.chat-welcome h1 {
+  font-size: clamp(24px, 4vw, 34px);
+  font-weight: 650;
+}
+
+.chat-welcome p {
+  color: var(--muted);
+}
+
+.chat-logo {
+  width: 65px;
+  height: 65px;
+  border-radius: 20px;
+  background: #19365A;
+  display: grid;
+  place-items: center;
+  color: #A9D3FF;
+  font-size: 28px;
+}
+
+/* ==================================
+   COMPOSITOR
+================================== */
+
+.composer {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 13px 15px;
+  margin-top: 20px;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 45px;
+  resize: none;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px;
+}
+
+.composer textarea::placeholder {
+  color: var(--muted);
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ==================================
+   SECCIONES
+================================== */
+
+.page-section {
+  padding: 28px;
+  width: 100%;
+  max-width: 950px;
+  margin: auto;
+}
+
+.page-section[hidden] {
+  display: none !important;
+}
+
+.page-section h1 {
+  margin-bottom: 18px;
+  font-size: 27px;
+}
+
+.settings-card,
+.account-card,
+.memory-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  padding: 18px;
+  margin: 14px 0;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-description {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+/* ==================================
+   FORMULARIOS
+================================== */
+
+input,
+select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 11px;
+  border-radius: 9px;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+/* ==================================
+   MEMORIA
+================================== */
+
+.memory-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  margin: 9px 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.memory-item span {
+  font-size: 13px;
+}
+
+.memory-item button {
+  color: #FCA5A5;
+  background: transparent;
+  font-size: 12px;
+}
+
+/* ==================================
+   OVERLAY MÓVIL
+================================== */
+
+#sidebar-overlay {
+  display: none;
+}
+
+#sidebar-overlay.visible {
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: #0009;
+  z-index: 15;
+}
+
+/* ==================================
+   TEMA CLARO
+================================== */
+
+:root[data-theme="light"] {
+  --bg: #F1F5F9;
+  --sidebar: #FFFFFF;
+  --panel: #FFFFFF;
+  --card: #E2EAF4;
+  --text: #17253A;
+  --muted: #64748B;
+  --border: #CBD5E1;
+}
+
+/* ==================================
+   RESPONSIVE
+================================== */
+
+@media (max-width: 760px) {
+  #sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-105%);
+    box-shadow: none;
+  }
+
+  #sidebar.open {
+    transform: translateX(0);
+    box-shadow: 15px 0 40px #0008;
+  }
+
+  .topbar {
+    height: 58px;
+    min-height: 58px;
+    padding: 0 12px;
+  }
+
+  .chat-area {
+    padding: 15px;
+  }
+
+  .page-section {
+    padding: 18px 14px;
+  }
+
+  .page-section h1 {
+    font-size: 23px;
+  }
+
+  .composer {
+    border-radius: 16px;
+  }
+}
+
+@media (min-width: 761px) {
+  #sidebar-overlay {
+    display: none !important;
+  }
 }
