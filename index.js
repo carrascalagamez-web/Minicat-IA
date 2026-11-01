@@ -839,8 +839,9 @@ async function registerCommands() {
 
   await rest.put(
     Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-    { bo
-body: slashCommands.map(command => command.toJSON()) }
+    {
+      body: slashCommands.map(command => command.toJSON())
+    }
   );
 
   console.log("Comandos slash registrados correctamente.");
