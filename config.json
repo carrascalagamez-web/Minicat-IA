@@ -1,33 +1,66 @@
 {
-  "bot": {
+  "app": {
     "name": "MINICAT IA",
-    "prefix": ".",
-    "website": "https://minicat-ia-production.up.railway.app/",
-    "commands": {
+    "language": "es",
+    "timezone": "America/Bogota"
+  },
+  "platforms": {
+    "web": {
+      "enabled": true,
+      "discordLogin": true,
       "chat": true,
-      "mention": true,
-      "reply": true
+      "imageGeneration": true,
+      "chatHistory": true
+    },
+    "discord": {
+      "enabled": true,
+      "respondToMentions": true,
+      "respondToReplies": true,
+      "prefix": ".",
+      "chat": true,
+      "imageGeneration": true,
+      "attachments": true,
+      "voiceMessages": true
     }
+  },
+  "ai": {
+    "provider": "groq",
+    "model": "CONFIGURE_IN_ENV",
+    "maxTokens": 4096,
+    "temperature": 0.7
+  },
+  "sharedSystem": {
+    "sameUsers": true,
+    "sameAI": true,
+    "sameLimits": true,
+    "samePreferences": true,
+    "sameMemorySettings": true
   },
   "memory": {
     "enabled": true,
-    "userControl": true,
-    "allowAdd": true,
-    "allowEdit": true,
-    "allowDelete": true,
-    "separateFromChats": true
-  },
-  "privacy": {
-    "saveConversations": false,
-    "saveTechnicalErrors": true
-  },
-  "interface": {
-    "theme": "dark",
-    "accentColor": "#397DCE",
-    "responsive": true
+    "userControlled": true,
+    "separatePerUser": true
   },
   "limits": {
-    "textMessagesPerDay": 100,
-    "imageMessagesPerDay": 2
+    "free": {
+      "messagesPerDay": 100,
+      "imagesPerDay": 5
+    },
+    "premium": {
+      "messagesPerDay": 3000,
+      "imagesPerDay": 20
+    },
+    "premiumPlus": {
+      "messagesPerDay": 10000,
+      "imagesPerDay": 50
+    }
+  },
+  "security": {
+    "requireDiscordAuthentication": true,
+    "maxLoginAttempts": 5
+  },
+  "privacy": {
+    "storeConversationContent": true,
+    "retentionDays": 30
   }
 }
