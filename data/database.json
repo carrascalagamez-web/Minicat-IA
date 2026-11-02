@@ -1,12 +1,14 @@
 {
   "users": {},
+  "conversations": {},
   "memories": {},
-  "settings": {},
-  "chats": {},
-  "statistics": {},
+  "preferences": {},
   "usage": {},
-  "privacy": {
-    "memoryEnabledByDefault": true,
-    "saveConversations": false
-  }
+  "sessions": {},
+  "statistics": {
+    "totalUsers": 0,
+    "totalMessages": 0,
+    "totalImages": 0
+  },
+  "lastUpdated": null
 }
