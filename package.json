@@ -1,26 +1,27 @@
-
 {
   "name": "minicat-ia",
   "version": "1.0.0",
-  "description": "MINICAT IA - Asistente inteligente para Discord y web",
+  "description": "MINICAT IA - Web y bot de Discord",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "discord.js": "^14.19.3",
+    "discord.js": "^14.22.1",
     "express": "^5.1.0",
-    "groq-sdk": "^0.30.0",
     "dotenv": "^16.4.7",
-    "express-session": "^1.18.1",
-    "axios": "^1.8.4",
-    "multer": "^2.0.2",
+    "groq-sdk": "^0.30.0",
+    "express-session": "^1.18.2",
+    "connect-pg-simple": "^10.0.0",
+    "pg": "^8.16.3",
     "cors": "^2.8.5",
     "helmet": "^8.1.0",
-    "archiver": "^7.0.1",
-    "uuid": "^11.1.0"
+    "express-rate-limit": "^8.1.0",
+    "multer": "^2.0.2"
   }
 }
